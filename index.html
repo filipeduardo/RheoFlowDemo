@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Simulador interativo de escoamento de fluidos newtonianos generalizados em dutos cilíndricos.">
+  <title>RheoFlow — Simulador de escoamento em dutos</title>
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']] },
+      options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="RheoFlow início">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32"><path d="M5 16c4-8 8 8 12 0s7 0 10 0"/><circle cx="16" cy="16" r="13"/></svg>
+        </span>
+        <span><strong>Rheo</strong>Flow</span>
+      </a>
+      <div class="topbar-center">
+        <span class="status-dot"></span>
+        Simulação em tempo real
+      </div>
+      <div class="top-actions">
+        <button class="icon-button" id="themeButton" type="button" aria-label="Alternar tema" title="Alternar tema">
+          <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9c0-.5 0-1-.1-1.4A7 7 0 0 1 13.4 3H12Z"/></svg>
+        </button>
+        <button class="button secondary" id="resetButton" type="button">Restaurar</button>
+        <button class="button primary" id="exportButton" type="button">
+          <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
+          Exportar CSV
+        </button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="controls-panel">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">Configuração</span>
+            <h1>Parâmetros do escoamento</h1>
+          </div>
+          <span class="live-badge">LIVE</span>
+        </div>
+
+        <section class="control-section">
+          <label class="field-label" for="modelSelect">Modelo reológico</label>
+          <div class="select-wrap">
+            <select id="modelSelect">
+              <option value="newtonian">Newtoniano</option>
+              <option value="powerLaw">Lei de Potência</option>
+              <option value="bingham">Bingham</option>
+              <option value="herschelBulkley" selected>Herschel–Bulkley</option>
+            </select>
+            <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg>
+          </div>
+          <p class="model-description" id="modelDescription"></p>
+        </section>
+
+        <section class="control-section">
+          <div class="section-title-row">
+            <h2>Geometria e operação</h2>
+            <span class="unit-system">SI</span>
+          </div>
+          <div class="control-grid">
+            <label class="number-field">
+              <span>Raio do duto</span>
+              <span class="input-row"><input id="radius" type="number" min="0.001" step="0.005" value="0.05"><small>m</small></span>
+            </label>
+            <label class="number-field">
+              <span>Gradiente de pressão</span>
+              <span class="input-row"><input id="pressureGradientInput" type="number" min="0" step="1000" value="12000"><small>Pa/m</small></span>
+            </label>
+          </div>
+        </section>
+
+        <section class="control-section rheology-section">
+          <h2>Propriedades reológicas</h2>
+          <div class="parameter" data-models="newtonian,bingham">
+            <div class="parameter-label"><label for="viscosity">Viscosidade <span id="viscositySymbol">μₚ</span></label><output id="viscosityOutput"></output></div>
+            <input id="viscosity" type="range" min="-3" max="1" step="0.01" value="-1">
+            <div class="range-ends"><span>0,001</span><span>10 Pa·s</span></div>
+          </div>
+          <div class="parameter" data-models="powerLaw,herschelBulkley">
+            <div class="parameter-label"><label for="consistency">Consistência <span>H</span></label><output id="consistencyOutput"></output></div>
+            <input id="consistency" type="range" min="-3" max="2" step="0.01" value="-0.3">
+            <div class="range-ends"><span>0,001</span><span>100 Pa·sⁿ</span></div>
+          </div>
+          <div class="parameter" data-models="powerLaw,herschelBulkley">
+            <div class="parameter-label"><label for="flowIndex">Índice de escoamento <span>n</span></label><output id="flowIndexOutput"></output></div>
+            <input id="flowIndex" type="range" min="0.2" max="1.8" step="0.01" value="0.65">
+            <div class="range-ends"><span>0,20</span><span>1,80</span></div>
+            <div class="behavior-scale"><span>Pseudoplástico</span><span>Newtoniano</span><span>Dilatante</span></div>
+          </div>
+          <div class="parameter" data-models="bingham,herschelBulkley">
+            <div class="parameter-label"><label for="yieldStress">Tensão limite <span>τ₀</span></label><output id="yieldStressOutput"></output></div>
+            <input id="yieldStress" type="range" min="0" max="450" step="2.25" value="45">
+            <div class="range-ends"><span>0</span><span id="yieldStressMax">450 Pa</span></div>
+          </div>
+        </section>
+
+        <section class="control-section display-section">
+          <h2>Visualização</h2>
+          <label class="toggle-row">
+            <span><i class="legend-dot velocity"></i>Perfil de velocidade</span>
+            <input id="showVelocity" type="checkbox" checked><span class="toggle"></span>
+          </label>
+          <label class="toggle-row">
+            <span><i class="legend-dot stress"></i>Perfil de tensão</span>
+            <input id="showStress" type="checkbox" checked><span class="toggle"></span>
+          </label>
+          <label class="toggle-row">
+            <span><i class="legend-dot plug"></i>Região de plugue</span>
+            <input id="showPlug" type="checkbox" checked><span class="toggle"></span>
+          </label>
+          <label class="toggle-row">
+            <span><i class="legend-dot particles"></i>Partículas animadas</span>
+            <input id="showParticles" type="checkbox" checked><span class="toggle"></span>
+          </label>
+        </section>
+      </aside>
+
+      <section class="dashboard">
+        <div class="dashboard-head">
+          <div>
+            <span class="eyebrow">Resultado instantâneo</span>
+            <h2 id="resultTitle">Herschel–Bulkley em duto circular</h2>
+          </div>
+          <div class="flow-state" id="flowState"><span></span>Escoando</div>
+        </div>
+
+        <div class="metric-grid">
+          <article class="metric-card accent-cyan">
+            <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 12h16m-5-5 5 5-5 5"/></svg></div>
+            <div><span>Velocidade máxima</span><strong id="maxVelocity">—</strong><small>m/s</small></div>
+          </article>
+          <article class="metric-card accent-blue">
+            <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 18V6m5 12V9m5 9V4m5 14v-7"/></svg></div>
+            <div><span>Velocidade média</span><strong id="meanVelocity">—</strong><small>m/s</small></div>
+          </article>
+          <article class="metric-card accent-violet">
+            <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M5 19c4-11 10-11 14 0M8 14h8"/></svg></div>
+            <div><span>Vazão volumétrica</span><strong id="flowRate">—</strong><small>m³/s</small></div>
+          </article>
+          <article class="metric-card accent-amber">
+            <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M7 8l5-5 5 5M7 16l5 5 5-5"/></svg></div>
+            <div><span>Tensão na parede</span><strong id="wallStress">—</strong><small>Pa</small></div>
+          </article>
+        </div>
+
+        <div class="visual-grid">
+          <article class="card flow-card">
+            <div class="card-header">
+              <div><span class="card-kicker">Vista longitudinal</span><h3>Campo de velocidade</h3></div>
+              <div class="animation-controls">
+                <button id="pauseButton" class="small-icon-button" type="button" aria-label="Pausar animação">
+                  <svg class="pause-icon" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg>
+                  <svg class="play-icon" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z"/></svg>
+                </button>
+                <span id="animationLabel">Animação ativa</span>
+              </div>
+            </div>
+            <div class="canvas-wrap flow-wrap"><canvas id="flowCanvas" role="img" aria-label="Visualização animada do escoamento no duto"></canvas></div>
+            <div class="flow-legend"><span>0</span><div class="gradient-bar"></div><span id="legendMax">U máx.</span></div>
+          </article>
+
+          <article class="card profile-card">
+            <div class="card-header">
+              <div><span class="card-kicker">Seção transversal</span><h3>Perfis radiais</h3></div>
+              <div class="chart-legend"><span><i class="legend-line velocity"></i>U(r)</span><span><i class="legend-line stress"></i>τ(r)</span></div>
+            </div>
+            <div class="canvas-wrap"><canvas id="profileCanvas" role="img" aria-label="Gráfico dos perfis radiais de velocidade e tensão"></canvas></div>
+            <div class="chart-readout" id="chartReadout">Mova o cursor sobre o gráfico para inspecionar valores.</div>
+          </article>
+        </div>
+
+        <div class="bottom-grid">
+          <article class="card equation-card">
+            <div class="card-header"><div><span class="card-kicker">Modelo ativo</span><h3>Equações completas</h3></div><span class="equation-tag" id="equationTag">HB</span></div>
+            <div class="equation-group">
+              <span class="equation-label">Perfil de velocidade</span>
+              <div class="equation" id="equation"></div>
+            </div>
+            <div class="equation-group compact">
+              <span class="equation-label">Tensão na parede</span>
+              <div class="equation" id="wallStressEquation"></div>
+            </div>
+            <div class="equation-group compact">
+              <span class="equation-label">Vazão volumétrica</span>
+              <div class="equation" id="flowRateEquation"></div>
+            </div>
+            <div class="equation-vars" id="equationVars"></div>
+          </article>
+          <article class="card diagnostics-card">
+            <div class="card-header"><div><span class="card-kicker">Diagnóstico</span><h3>Regime e estrutura</h3></div></div>
+            <div class="diagnostic-list">
+              <div><span>Gradiente de pressão</span><strong id="pressureGradient">—</strong></div>
+              <div><span>Índice de plasticidade (Pl)</span><strong id="plasticityIndex">—</strong></div>
+              <div><span>Raio do plugue</span><strong id="plugRadius">—</strong></div>
+              <div><span>Área não cisalhada</span><strong id="plugArea">—</strong></div>
+              <div><span>Taxa na parede</span><strong id="wallShearRate">—</strong></div>
+            </div>
+          </article>
+        </div>
+        <p class="assumption-note">Modelo ideal: escoamento incompressível, permanente, laminar, axisimétrico, completamente desenvolvido e sem deslizamento na parede.</p>
+      </section>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
