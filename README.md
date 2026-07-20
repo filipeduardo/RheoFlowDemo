@@ -27,6 +27,11 @@ Then open `http://localhost:8000`.
 
 ## GitHub Pages
 
-Pushing to `main` triggers the workflow in `.github/workflows/pages.yml`. In the repository settings, select **GitHub Actions** as the Pages deployment source. The site will then be published at:
+This is a static HTML/CSS/JS site, so no build step is required.
+
+1. Go to **Settings → Pages**.
+2. Under **Build and deployment**, set **Source** to **Deploy from a branch**.
+3. Select **`main`** and the **`/(root)`** folder, then click **Save**.
+4. The site will be published at:
 
 https://filipeduardo.github.io/RheoFlowDemo/
