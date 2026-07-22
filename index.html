@@ -89,31 +89,31 @@
 
           <div class="control-grid">
             <label class="number-field">
-              <span>Raio do duto</span>
+              <span>Raio do duto <span class="math">R</span></span>
               <span class="input-row"><input id="radius" type="number" min="0.001" step="0.005" value="0.05"><small>m</small></span>
             </label>
             <label class="number-field" id="pressureGradientField">
-              <span>Gradiente de pressão</span>
+              <span>Gradiente de pressão <span class="math">G</span></span>
               <span class="input-row"><input id="pressureGradientInput" type="number" min="0" step="1000" value="12000"><small>Pa/m</small></span>
             </label>
             <label class="number-field" id="pressureDifferenceField" hidden>
-              <span>Diferencial de pressão</span>
+              <span>Diferencial de pressão <span class="math">Δp</span></span>
               <span class="input-row"><input id="pressureDifference" type="number" min="0" step="1000" value="6000"><small>Pa</small></span>
             </label>
             <label class="number-field" id="flowRateField" hidden>
-              <span>Vazão volumétrica</span>
+              <span>Vazão volumétrica <span class="math">Q</span></span>
               <span class="input-row"><input id="flowRateInput" type="number" min="0" step="1e-6" value="0.001"><small>m³/s</small></span>
             </label>
             <label class="number-field">
-              <span>Comprimento do tubo</span>
+              <span>Comprimento do tubo <span class="math">L</span></span>
               <span class="input-row"><input id="tubeLength" type="number" min="0.001" step="0.1" value="0.5"><small>m</small></span>
             </label>
             <label class="number-field">
-              <span>Densidade do fluido</span>
+              <span>Densidade do fluido <span class="math">ρ</span></span>
               <span class="input-row"><input id="density" type="number" min="0.001" step="10" value="1000"><small>kg/m³</small></span>
             </label>
             <label class="number-field">
-              <span>Velocidade do som</span>
+              <span>Velocidade do som <span class="math">c</span></span>
               <span class="input-row"><input id="soundSpeed" type="number" min="1" step="10" value="1500"><small>m/s</small></span>
             </label>
           </div>
@@ -122,7 +122,7 @@
         <section class="control-section rheology-section">
           <h2>Propriedades reológicas</h2>
           <div class="parameter" data-models="newtonian,bingham">
-            <div class="parameter-label"><label for="viscosity">Viscosidade <span id="viscositySymbol">μₚ</span></label><span class="param-value"><output id="viscosityOutput"></output><input id="viscosityNumber" type="number" step="any" min="0.001" max="10" value="0.1"></span></div>
+            <div class="parameter-label"><label for="viscosity">Viscosidade <span id="viscositySymbol">μ</span></label><span class="param-value"><output id="viscosityOutput"></output><input id="viscosityNumber" type="number" step="any" min="0.001" max="10" value="0.1"></span></div>
             <input id="viscosity" type="range" min="-3" max="1" step="0.01" value="-1">
             <div class="range-ends"><span>0,001</span><span>10 Pa·s</span></div>
           </div>
@@ -177,19 +177,19 @@
         <div class="metric-grid">
           <article class="metric-card accent-cyan">
             <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 12h16m-5-5 5 5-5 5"/></svg></div>
-            <div><span>Velocidade máxima</span><strong id="maxVelocity">—</strong><small>m/s</small></div>
+            <div><span>Velocidade máxima <span class="math">U<sub>max</sub></span></span><strong id="maxVelocity">—</strong><small>m/s</small></div>
           </article>
           <article class="metric-card accent-blue">
             <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 18V6m5 12V9m5 9V4m5 14v-7"/></svg></div>
-            <div><span>Velocidade média</span><strong id="meanVelocity">—</strong><small>m/s</small></div>
+            <div><span>Velocidade média <span class="math">U</span></span><strong id="meanVelocity">—</strong><small>m/s</small></div>
           </article>
           <article class="metric-card accent-violet">
             <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M5 19c4-11 10-11 14 0M8 14h8"/></svg></div>
-            <div><span>Vazão volumétrica</span><strong id="flowRate">—</strong><small>m³/s</small></div>
+            <div><span>Vazão volumétrica <span class="math">Q</span></span><strong id="flowRate">—</strong><small>m³/s</small></div>
           </article>
           <article class="metric-card accent-amber">
             <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M7 8l5-5 5 5M7 16l5 5 5-5"/></svg></div>
-            <div><span>Tensão na parede</span><strong id="wallStress">—</strong><small>Pa</small></div>
+            <div><span>Tensão na parede <span class="math">τ<sub>w</sub></span></span><strong id="wallStress">—</strong><small>Pa</small></div>
           </article>
         </div>
 
@@ -206,13 +206,13 @@
               </div>
             </div>
             <div class="canvas-wrap flow-wrap"><canvas id="flowCanvas" role="img" aria-label="Visualização animada do escoamento no duto"></canvas></div>
-            <div class="flow-legend"><span>0</span><div class="gradient-bar"></div><span id="legendMax">U máx.</span></div>
+            <div class="flow-legend"><span>0</span><div class="gradient-bar"></div><span id="legendMax"><span class="math">U<sub>max</sub></span></span></div>
           </article>
 
           <article class="card profile-card">
             <div class="card-header">
               <div><span class="card-kicker">Seção transversal</span><h3>Perfis radiais</h3></div>
-              <div class="chart-legend"><span><i class="legend-line velocity"></i>U(r)</span><span><i class="legend-line stress"></i>τ(r)</span></div>
+              <div class="chart-legend"><span><i class="legend-line velocity"></i><span class="math">U(r)</span></span><span><i class="legend-line stress"></i><span class="math">τ(r)</span></span></div>
             </div>
             <div class="canvas-wrap"><canvas id="profileCanvas" role="img" aria-label="Gráfico dos perfis radiais de velocidade e tensão"></canvas></div>
             <div class="chart-readout" id="chartReadout">Mova o cursor sobre o gráfico para inspecionar valores.</div>
@@ -223,15 +223,15 @@
           <article class="card equation-card">
             <div class="card-header"><div><span class="card-kicker">Modelo ativo</span><h3>Equações completas</h3></div><span class="equation-tag" id="equationTag">HB</span></div>
             <div class="equation-group">
-              <span class="equation-label">Perfil de velocidade</span>
+              <span class="equation-label">Perfil de velocidade <span class="math">U<sub>z</sub>(r)</span></span>
               <div class="equation" id="equation"></div>
             </div>
             <div class="equation-group compact">
-              <span class="equation-label">Tensão na parede</span>
+              <span class="equation-label">Tensão na parede <span class="math">τ<sub>w</sub></span></span>
               <div class="equation" id="wallStressEquation"></div>
             </div>
             <div class="equation-group compact">
-              <span class="equation-label">Vazão volumétrica</span>
+              <span class="equation-label">Vazão volumétrica <span class="math">Q</span></span>
               <div class="equation" id="flowRateEquation"></div>
             </div>
             <div class="equation-vars" id="equationVars"></div>
@@ -239,14 +239,14 @@
           <article class="card diagnostics-card">
             <div class="card-header"><div><span class="card-kicker">Diagnóstico</span><h3>Regime e estrutura</h3></div></div>
             <div class="diagnostic-list">
-              <div><span>Gradiente de pressão</span><strong id="pressureGradient">—</strong></div>
-              <div><span>Diferencial de pressão</span><strong id="pressureDifferenceOutput">—</strong></div>
-              <div><span>Índice de plasticidade (Pl)</span><strong id="plasticityIndex">—</strong></div>
-              <div><span>Raio do plugue</span><strong id="plugRadius">—</strong></div>
-              <div><span>Área não cisalhada</span><strong id="plugArea">—</strong></div>
-              <div><span>Taxa na parede</span><strong id="wallShearRate">—</strong></div>
-              <div><span>Reynolds não-newtoniano</span><strong id="reynoldsNumber">—</strong></div>
-              <div><span>Número de Mach</span><strong id="machNumber">—</strong></div>
+              <div><span>Gradiente de pressão <span class="math">G</span></span><strong id="pressureGradient">—</strong></div>
+              <div><span>Diferencial de pressão <span class="math">Δp</span></span><strong id="pressureDifferenceOutput">—</strong></div>
+              <div><span>Índice de plasticidade <span class="math">Pl</span></span><strong id="plasticityIndex">—</strong></div>
+              <div><span>Raio do plugue <span class="math">R<sub>p</sub></span></span><strong id="plugRadius">—</strong></div>
+              <div><span>Área não cisalhada <span class="math">A<sub>nc</sub></span></span><strong id="plugArea">—</strong></div>
+              <div><span>Taxa de cisalhamento na parede <span class="math">γ̇<sub>w</sub></span></span><strong id="wallShearRate">—</strong></div>
+              <div><span>Reynolds não-newtoniano <span class="math">Re<sub>HB</sub></span></span><strong id="reynoldsNumber">—</strong></div>
+              <div><span>Número de Mach <span class="math">Ma</span></span><strong id="machNumber">—</strong></div>
             </div>
           </article>
         </div>

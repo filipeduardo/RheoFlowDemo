@@ -21,19 +21,19 @@ const defaults = {
 const modelInfo = {
   newtonian: {
     name: 'Newtoniano', tag: 'N',
-    description: 'Viscosidade constante e relação linear entre tensão e taxa de cisalhamento.'
+    description: 'Viscosidade μ constante e relação linear entre tensão τ e taxa de cisalhamento γ̇.'
   },
   powerLaw: {
     name: 'Lei de Potência', tag: 'PL',
-    description: 'A viscosidade aparente varia com a taxa de cisalhamento segundo os parâmetros H e n.'
+    description: 'A viscosidade aparente varia com a taxa de cisalhamento γ̇ segundo os parâmetros H e n.'
   },
   bingham: {
     name: 'Bingham', tag: 'B',
-    description: 'Apresenta tensão limite e comportamento linear depois do início do escoamento.'
+    description: 'Apresenta tensão limite τ₀ e comportamento linear depois do início do escoamento.'
   },
   herschelBulkley: {
     name: 'Herschel–Bulkley', tag: 'HB',
-    description: 'Combina tensão limite com uma resposta não linear do tipo lei de potência.'
+    description: 'Combina tensão limite τ₀ com resposta não linear do tipo lei de potência (H, n).'
   }
 };
 
@@ -306,7 +306,7 @@ function updateControls(params, mode = {}) {
     field.hidden = !field.dataset.models.split(',').includes(params.model);
   });
 
-  $('#viscositySymbol').textContent = params.model === 'bingham' ? 'μₚ' : 'μ';
+  $('#viscositySymbol').textContent = 'μ';
 
   els.pressureSpecModeWrap.hidden = flowMode !== 'pressureGradient';
   els.pressureGradientField.hidden = flowMode !== 'pressureGradient' || pressureSpecMode !== 'gradient';
@@ -363,7 +363,7 @@ function updateMetrics(data, mode = {}) {
   els.pressureDifferenceOutput.textContent = `${formatValue(mode.pressureDifference ?? (params.G * params.tubeLength), 2)} Pa`;
   els.reynoldsNumber.textContent = formatValue(re, 2);
   els.machNumber.textContent = formatValue(mach, 3);
-  els.legendMax.textContent = `${formatValue(data.maxVelocity)} m/s`;
+  els.legendMax.innerHTML = `<span class="math">U<sub>max</sub></span> = ${formatValue(data.maxVelocity)} m/s`;
 
   const flowing = data.flowing && data.maxVelocity > 0;
   const turbulent = re > 2100;
@@ -406,9 +406,9 @@ function updateEquation(data) {
     els.flowRateEquation.textContent = String.raw`\[Q=2\pi\int_0^R U_z(r)\,r\,dr=\frac{\pi nR^3}{3n+1}\left(\frac{\tau_w}{H}\right)^{1/n}\]`;
     els.equationVars.textContent = String.raw`\(H=${formatValue(H, 4)}\ \mathrm{Pa\,s^n},\quad n=${formatValue(n, 2)},\quad G=${formatValue(G, 2)}\ \mathrm{Pa\,m^{-1}},\quad R=${formatValue(R, 4)}\ \mathrm{m},\quad Q=${formatValue(data.flowRate, 4)}\ \mathrm{m^3\,s^{-1}}\)`;
   } else if (model === 'bingham') {
-    els.equation.textContent = String.raw`\[U_z(r)=\begin{cases}\displaystyle \frac{R\tau_w}{2\mu_p}(1-\mathrm{Pl})^2,&0\le r\le R_p,\\[6pt]\displaystyle \frac{R\tau_w}{2\mu_p}\left[(1-\mathrm{Pl})^2-\left(\frac rR-\mathrm{Pl}\right)^2\right],&R_p<r\le R,\end{cases}\quad \underbrace{\mathrm{Pl}=\frac{R_p}{R}=\frac{\tau_0}{\tau_w}}_{\text{índice de plasticidade}}\]`;
-    els.flowRateEquation.textContent = String.raw`\[Q=2\pi\left[\int_0^{R_p}U_p r\,dr+\int_{R_p}^{R}U_z(r)r\,dr\right]=\frac{\pi G R^4}{8\mu_p}\left(1-\frac{4\mathrm{Pl}}{3}+\frac{\mathrm{Pl}^4}{3}\right)\]`;
-    els.equationVars.textContent = String.raw`\(\mu_p=${formatValue(mu, 4)}\ \mathrm{Pa\,s},\quad \tau_0=${formatValue(data.tau0, 3)}\ \mathrm{Pa},\quad \mathrm{Pl}=${formatValue(data.Pl, 4)},\quad R_p=${formatValue(data.Rp, 5)}\ \mathrm{m},\quad Q=${formatValue(data.flowRate, 4)}\ \mathrm{m^3\,s^{-1}}\)`;
+    els.equation.textContent = String.raw`\[U_z(r)=\begin{cases}\displaystyle \frac{R\tau_w}{2\mu}(1-\mathrm{Pl})^2,&0\le r\le R_p,\\[6pt]\displaystyle \frac{R\tau_w}{2\mu}\left[(1-\mathrm{Pl})^2-\left(\frac rR-\mathrm{Pl}\right)^2\right],&R_p<r\le R,\end{cases}\quad \underbrace{\mathrm{Pl}=\frac{R_p}{R}=\frac{\tau_0}{\tau_w}}_{\text{índice de plasticidade}}\]`;
+    els.flowRateEquation.textContent = String.raw`\[Q=2\pi\left[\int_0^{R_p}U_p r\,dr+\int_{R_p}^{R}U_z(r)r\,dr\right]=\frac{\pi G R^4}{8\mu}\left(1-\frac{4\mathrm{Pl}}{3}+\frac{\mathrm{Pl}^4}{3}\right)\]`;
+    els.equationVars.textContent = String.raw`\(\mu=${formatValue(mu, 4)}\ \mathrm{Pa\,s},\quad \tau_0=${formatValue(data.tau0, 3)}\ \mathrm{Pa},\quad \mathrm{Pl}=${formatValue(data.Pl, 4)},\quad R_p=${formatValue(data.Rp, 5)}\ \mathrm{m},\quad Q=${formatValue(data.flowRate, 4)}\ \mathrm{m^3\,s^{-1}}\)`;
   } else {
     els.equation.textContent = String.raw`\[U_z(r)=\begin{cases}\displaystyle \frac{nR}{n+1}\left(\frac{\tau_w}{H}\right)^{1/n}(1-\mathrm{Pl})^{(n+1)/n},&0\le r\le R_p,\\[6pt]\displaystyle \frac{nR}{n+1}\left(\frac{\tau_w}{H}\right)^{1/n}\left[(1-\mathrm{Pl})^{(n+1)/n}-\left(\frac rR-\mathrm{Pl}\right)^{(n+1)/n}\right],&R_p<r\le R,\end{cases}\quad \underbrace{\mathrm{Pl}=\frac{R_p}{R}=\frac{\tau_0}{\tau_w}}_{\text{índice de plasticidade}}\]`;
     els.flowRateEquation.textContent = String.raw`\[Q=\pi R^3\left(\frac{\tau_w}{H}\right)^{1/n}\left[\frac{(1-\mathrm{Pl})^{1/n+3}}{1/n+3}+\frac{2\mathrm{Pl}(1-\mathrm{Pl})^{1/n+2}}{1/n+2}+\frac{\mathrm{Pl}^2(1-\mathrm{Pl})^{1/n+1}}{1/n+1}\right]\]`;

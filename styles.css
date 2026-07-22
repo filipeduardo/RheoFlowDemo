@@ -96,6 +96,8 @@ h3 { font-size: 15px; letter-spacing: -.02em; margin: 0; }
 .parameter-label label { color: var(--muted); font-weight: 700; }
 .parameter-label label span { color: var(--cyan); font-family: serif; font-style: italic; }
 .parameter-label output { font-family: var(--mono); font-size: 10px; color: var(--text); }
+.math { color: var(--cyan); font-family: serif; font-style: italic; text-transform: none; font-weight: 400; }
+.math sub, .math sup { font-size: .75em; font-family: var(--font); font-style: normal; }
 .param-value { display: flex; align-items: center; gap: 8px; }
 .param-value input[type='number'] { width: 74px; padding: 4px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); color: var(--text); font-family: var(--mono); font-size: 10px; text-align: right; }
 .param-value input[type='number']:focus { outline: none; border-color: var(--cyan); }
@@ -139,6 +141,8 @@ input[type='range']::-moz-range-thumb { width: 9px; height: 9px; border-radius: 
 .metric-card span { color: var(--muted); font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; display: block; }
 .metric-card strong { font-family: var(--mono); font-size: clamp(15px, 1.5vw, 21px); font-weight: 500; display: inline-block; margin-top: 4px; white-space: nowrap; }
 .metric-card small { color: var(--muted-2); font-size: 8px; margin-left: 4px; }
+.metric-card > div:last-child { flex: 1 1 0; min-width: 0; }
+.metric-card span.math { display: inline; }
 .visual-grid { display: grid; grid-template-columns: 1.18fr 1fr; gap: 12px; margin-top: 12px; }
 .card { min-width: 0; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
 .card-header { padding: 16px 18px 12px; }
