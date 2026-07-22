@@ -97,7 +97,12 @@ const els = {
   animationLabel: $('#animationLabel'),
   themeButton: $('#themeButton'),
   resetButton: $('#resetButton'),
-  exportButton: $('#exportButton')
+  exportButton: $('#exportButton'),
+  accessibilityButton: $('#accessibilityButton'),
+  accessibilityPopover: $('#accessibilityPopover'),
+  showControls: $('#showControlsPanel'),
+  showDashboard: $('#showDashboardPanel'),
+  workspace: $('.workspace')
 };
 
 let result = null;
@@ -106,6 +111,8 @@ let animationTime = 0;
 let animationPaused = false;
 let particles = [];
 let hoveredIndex = -1;
+let fontScale = 1;
+let lineWidthScale = 1;
 
 function readPositive(input, fallback) {
   const value = Number(input.value);
@@ -435,6 +442,14 @@ function css(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+function scaledFont(size, family) {
+  return `${Math.round(size * fontScale)}px ${family}`;
+}
+
+function scaledLineWidth(base) {
+  return base * lineWidthScale;
+}
+
 function drawProfileChart() {
   if (!result) return;
   const { ctx, width, height } = setupCanvas(els.profileCanvas);
@@ -447,15 +462,15 @@ function drawProfileChart() {
     ctx.fillStyle = 'rgba(168, 137, 255, .08)';
     ctx.fillRect(margin.left + w * (1 - result.Pl) / 2, margin.top, w * result.Pl, h);
     ctx.fillStyle = css('--violet');
-    ctx.font = '8px Manrope';
+    ctx.font = scaledFont(8, 'Manrope');
     ctx.textAlign = 'center';
     ctx.fillText('PLUGUE', margin.left + w / 2, margin.top + 12);
   }
 
   ctx.strokeStyle = css('--border-soft');
-  ctx.lineWidth = 1;
+  ctx.lineWidth = scaledLineWidth(1);
   ctx.fillStyle = css('--muted-2');
-  ctx.font = '8px DM Mono';
+  ctx.font = scaledFont(8, 'DM Mono');
   for (let i = 0; i <= 4; i += 1) {
     const y = margin.top + h * i / 4;
     ctx.beginPath(); ctx.moveTo(margin.left, y); ctx.lineTo(margin.left + w, y); ctx.stroke();
@@ -470,8 +485,8 @@ function drawProfileChart() {
   ctx.fillStyle = css('--muted');
   ctx.textAlign = 'center';
   ctx.fillText('r / R', margin.left + w / 2, height - 8);
-  ctx.save(); ctx.translate(11, margin.top + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('U (m/s)', 0, 0); ctx.restore();
-  ctx.save(); ctx.translate(width - 8, margin.top + h / 2); ctx.rotate(Math.PI / 2); ctx.fillStyle = css('--amber'); ctx.fillText('τ (Pa)', 0, 0); ctx.restore();
+  ctx.save(); ctx.translate(11, margin.top + h / 2); ctx.rotate(-Math.PI / 2); ctx.font = scaledFont(8, 'Manrope'); ctx.fillText('U (m/s)', 0, 0); ctx.restore();
+  ctx.save(); ctx.translate(width - 8, margin.top + h / 2); ctx.rotate(Math.PI / 2); ctx.fillStyle = css('--amber'); ctx.font = scaledFont(8, 'Manrope'); ctx.fillText('τ (Pa)', 0, 0); ctx.restore();
 
   const points = [];
   for (let i = result.samples.length - 1; i >= 0; i -= 2) points.push({ ...result.samples[i], signedX: -result.samples[i].x });
@@ -486,7 +501,7 @@ function drawProfileChart() {
       const y = margin.top + h * (1 - p.velocity / maxU);
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
-    ctx.strokeStyle = css('--cyan'); ctx.lineWidth = 2.2; ctx.stroke();
+    ctx.strokeStyle = css('--cyan'); ctx.lineWidth = scaledLineWidth(2.2); ctx.stroke();
   }
   if (els.showStress.checked) {
     ctx.beginPath();
@@ -495,13 +510,13 @@ function drawProfileChart() {
       const y = margin.top + h * (1 - p.stress / maxTau);
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
-    ctx.setLineDash([5, 4]); ctx.strokeStyle = css('--amber'); ctx.lineWidth = 1.6; ctx.stroke(); ctx.setLineDash([]);
+    ctx.setLineDash([5 * lineWidthScale, 4 * lineWidthScale]); ctx.strokeStyle = css('--amber'); ctx.lineWidth = scaledLineWidth(1.6); ctx.stroke(); ctx.setLineDash([]);
   }
 
   if (hoveredIndex >= 0) {
     const signed = hoveredIndex / 100 - 1;
     const x = margin.left + (signed + 1) / 2 * w;
-    ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.beginPath(); ctx.moveTo(x, margin.top); ctx.lineTo(x, margin.top + h); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = scaledLineWidth(1); ctx.beginPath(); ctx.moveTo(x, margin.top); ctx.lineTo(x, margin.top + h); ctx.stroke();
   }
 }
 
@@ -549,13 +564,14 @@ function drawFlow(delta = 0) {
   if (els.showPlug.checked && result.tau0 > 0 && result.Pl > 0) {
     ctx.fillStyle = 'rgba(168, 137, 255, .12)';
     ctx.fillRect(left, centerY - pipeRadius * result.Pl, right - left, pipeRadius * result.Pl * 2);
-    ctx.strokeStyle = 'rgba(168, 137, 255, .48)'; ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = 'rgba(168, 137, 255, .48)'; ctx.setLineDash([4 * lineWidthScale, 4 * lineWidthScale]);
+    ctx.lineWidth = scaledLineWidth(1);
     ctx.beginPath(); ctx.moveTo(left, centerY - pipeRadius * result.Pl); ctx.lineTo(right, centerY - pipeRadius * result.Pl); ctx.moveTo(left, centerY + pipeRadius * result.Pl); ctx.lineTo(right, centerY + pipeRadius * result.Pl); ctx.stroke(); ctx.setLineDash([]);
   }
 
-  ctx.strokeStyle = css('--border'); ctx.lineWidth = 3;
+  ctx.strokeStyle = css('--border'); ctx.lineWidth = scaledLineWidth(3);
   ctx.beginPath(); ctx.moveTo(left - 8, top); ctx.lineTo(right + 8, top); ctx.moveTo(left - 8, bottom); ctx.lineTo(right + 8, bottom); ctx.stroke();
-  ctx.strokeStyle = 'rgba(38,224,197,.2)'; ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(38,224,197,.2)'; ctx.lineWidth = scaledLineWidth(1);
   ctx.beginPath(); ctx.moveTo(left, centerY); ctx.lineTo(right, centerY); ctx.stroke();
 
   if (els.showParticles.checked) {
@@ -569,13 +585,15 @@ function drawFlow(delta = 0) {
       ctx.beginPath(); ctx.arc(x, y, particle.size, 0, Math.PI * 2); ctx.fill();
       if (local > .15) {
         ctx.strokeStyle = `rgba(38, 224, 197, ${particle.alpha * .32})`;
+        ctx.lineWidth = scaledLineWidth(1);
         ctx.beginPath(); ctx.moveTo(x - 5 * local, y); ctx.lineTo(x, y); ctx.stroke();
       }
     });
   }
 
-  ctx.fillStyle = css('--muted'); ctx.font = '8px Manrope'; ctx.textAlign = 'left'; ctx.fillText('ENTRADA', left, top - 12); ctx.textAlign = 'right'; ctx.fillText('SAÍDA', right, top - 12);
-  ctx.strokeStyle = css('--cyan'); ctx.beginPath(); ctx.moveTo(right - 28, top - 14); ctx.lineTo(right - 4, top - 14); ctx.lineTo(right - 10, top - 18); ctx.moveTo(right - 4, top - 14); ctx.lineTo(right - 10, top - 10); ctx.stroke();
+  ctx.fillStyle = css('--muted'); ctx.font = scaledFont(8, 'Manrope'); ctx.textAlign = 'left'; ctx.fillText('ENTRADA', left, top - 12); ctx.textAlign = 'right'; ctx.fillText('SAÍDA', right, top - 12);
+  ctx.strokeStyle = css('--cyan'); ctx.lineWidth = scaledLineWidth(1.5);
+  ctx.beginPath(); ctx.moveTo(right - 28, top - 14); ctx.lineTo(right - 4, top - 14); ctx.lineTo(right - 10, top - 18); ctx.moveTo(right - 4, top - 14); ctx.lineTo(right - 10, top - 10); ctx.stroke();
 }
 
 function animate(timestamp) {
@@ -669,6 +687,58 @@ function handleProfilePointer(event) {
   drawProfileChart();
 }
 
+function setPanelVisibility() {
+  const showControls = els.showControls.checked;
+  const showDashboard = els.showDashboard.checked;
+  if (!showControls && !showDashboard) {
+    els.showControls.checked = true;
+    els.showDashboard.checked = true;
+  }
+  els.workspace.classList.toggle('hide-controls', !els.showControls.checked);
+  els.workspace.classList.toggle('hide-dashboard', !els.showDashboard.checked);
+  requestAnimationFrame(() => { drawProfileChart(); drawFlow(); });
+}
+
+function setFontSize(value) {
+  document.documentElement.dataset.fontSize = value;
+  fontScale = value === 'default' ? 1 : value === 'large' ? 1.15 : 1.3;
+  drawProfileChart(); drawFlow();
+}
+
+function setLineWidth(value) {
+  document.documentElement.dataset.lineWidth = value;
+  lineWidthScale = value === 'default' ? 1 : value === 'thick' ? 1.5 : 2;
+  drawProfileChart(); drawFlow();
+}
+
+function toggleA11yPopover(show) {
+  const open = typeof show === 'boolean' ? show : !els.accessibilityPopover.classList.contains('open');
+  els.accessibilityPopover.classList.toggle('open', open);
+  els.accessibilityButton.setAttribute('aria-expanded', String(open));
+}
+
+function setupAccessibility() {
+  setPanelVisibility();
+  els.accessibilityButton.addEventListener('click', (e) => { e.stopPropagation(); toggleA11yPopover(); });
+  els.accessibilityPopover.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', () => toggleA11yPopover(false));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') toggleA11yPopover(false); });
+  els.showControls.addEventListener('change', setPanelVisibility);
+  els.showDashboard.addEventListener('change', setPanelVisibility);
+  $$('#accessibilityPopover .segmented').forEach((group) => {
+    const buttons = [...group.querySelectorAll('button')];
+    buttons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        buttons.forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        const value = btn.dataset.value;
+        if (group.getAttribute('aria-label') === 'Tamanho da fonte') setFontSize(value);
+        else setLineWidth(value);
+      });
+    });
+  });
+}
+
 syncSliderAndNumber(els.viscosityNumber, els.viscosity, true);
 syncSliderAndNumber(els.consistencyNumber, els.consistency, true);
 syncSliderAndNumber(els.flowIndexNumber, els.flowIndex, false);
@@ -693,6 +763,7 @@ els.exportButton.addEventListener('click', exportCsv);
 
 resetParticles();
 reset();
+setupAccessibility();
 window.addEventListener('load', () => updateEquation(result));
 cancelAnimationFrame(animationFrame);
 animationFrame = requestAnimationFrame(animate);
