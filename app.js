@@ -5,10 +5,17 @@ const defaults = {
   model: 'herschelBulkley',
   radius: 0.05,
   pressureGradient: 12000,
-  viscosityLog: -1,
-  consistencyLog: -0.3,
+  viscosity: 0.1,
+  consistency: 0.5012,
   flowIndex: 0.65,
-  yieldStress: 45
+  yieldStress: 45,
+  flowMode: 'pressureGradient',
+  pressureSpecMode: 'gradient',
+  pressureDifference: 6000,
+  tubeLength: 0.5,
+  flowRate: 0.001,
+  density: 1000,
+  soundSpeed: 1500
 };
 
 const modelInfo = {
@@ -31,16 +38,66 @@ const modelInfo = {
 };
 
 const els = {
-  model: $('#modelSelect'), radius: $('#radius'), pressureGradientInput: $('#pressureGradientInput'),
-  viscosity: $('#viscosity'), consistency: $('#consistency'), flowIndex: $('#flowIndex'), yieldStress: $('#yieldStress'),
-  viscosityOutput: $('#viscosityOutput'), consistencyOutput: $('#consistencyOutput'), flowIndexOutput: $('#flowIndexOutput'), yieldStressOutput: $('#yieldStressOutput'), yieldStressMax: $('#yieldStressMax'),
-  modelDescription: $('#modelDescription'), resultTitle: $('#resultTitle'), flowState: $('#flowState'),
-  maxVelocity: $('#maxVelocity'), meanVelocity: $('#meanVelocity'), flowRate: $('#flowRate'), wallStress: $('#wallStress'),
-  pressureGradient: $('#pressureGradient'), plasticityIndex: $('#plasticityIndex'), plugRadius: $('#plugRadius'), plugArea: $('#plugArea'), wallShearRate: $('#wallShearRate'),
-  equation: $('#equation'), wallStressEquation: $('#wallStressEquation'), flowRateEquation: $('#flowRateEquation'), equationVars: $('#equationVars'), equationTag: $('#equationTag'), legendMax: $('#legendMax'),
-  profileCanvas: $('#profileCanvas'), flowCanvas: $('#flowCanvas'), chartReadout: $('#chartReadout'),
-  showVelocity: $('#showVelocity'), showStress: $('#showStress'), showPlug: $('#showPlug'), showParticles: $('#showParticles'),
-  pauseButton: $('#pauseButton'), animationLabel: $('#animationLabel'), themeButton: $('#themeButton'), resetButton: $('#resetButton'), exportButton: $('#exportButton')
+  model: $('#modelSelect'),
+  radius: $('#radius'),
+  flowMode: $('#flowMode'),
+  pressureSpecMode: $('#pressureSpecMode'),
+  pressureSpecModeWrap: $('#pressureSpecModeWrap'),
+  pressureGradientInput: $('#pressureGradientInput'),
+  pressureGradientField: $('#pressureGradientField'),
+  pressureDifference: $('#pressureDifference'),
+  pressureDifferenceField: $('#pressureDifferenceField'),
+  tubeLength: $('#tubeLength'),
+  flowRateInput: $('#flowRateInput'),
+  flowRateField: $('#flowRateField'),
+  density: $('#density'),
+  soundSpeed: $('#soundSpeed'),
+  viscosity: $('#viscosity'),
+  viscosityNumber: $('#viscosityNumber'),
+  viscosityOutput: $('#viscosityOutput'),
+  consistency: $('#consistency'),
+  consistencyNumber: $('#consistencyNumber'),
+  consistencyOutput: $('#consistencyOutput'),
+  flowIndex: $('#flowIndex'),
+  flowIndexNumber: $('#flowIndexNumber'),
+  flowIndexOutput: $('#flowIndexOutput'),
+  yieldStress: $('#yieldStress'),
+  yieldStressNumber: $('#yieldStressNumber'),
+  yieldStressOutput: $('#yieldStressOutput'),
+  yieldStressMax: $('#yieldStressMax'),
+  modelDescription: $('#modelDescription'),
+  resultTitle: $('#resultTitle'),
+  flowState: $('#flowState'),
+  maxVelocity: $('#maxVelocity'),
+  meanVelocity: $('#meanVelocity'),
+  flowRate: $('#flowRate'),
+  wallStress: $('#wallStress'),
+  pressureGradient: $('#pressureGradient'),
+  pressureDifferenceOutput: $('#pressureDifferenceOutput'),
+  reynoldsNumber: $('#reynoldsNumber'),
+  machNumber: $('#machNumber'),
+  plasticityIndex: $('#plasticityIndex'),
+  plugRadius: $('#plugRadius'),
+  plugArea: $('#plugArea'),
+  wallShearRate: $('#wallShearRate'),
+  equation: $('#equation'),
+  wallStressEquation: $('#wallStressEquation'),
+  flowRateEquation: $('#flowRateEquation'),
+  equationVars: $('#equationVars'),
+  equationTag: $('#equationTag'),
+  legendMax: $('#legendMax'),
+  profileCanvas: $('#profileCanvas'),
+  flowCanvas: $('#flowCanvas'),
+  chartReadout: $('#chartReadout'),
+  showVelocity: $('#showVelocity'),
+  showStress: $('#showStress'),
+  showPlug: $('#showPlug'),
+  showParticles: $('#showParticles'),
+  pauseButton: $('#pauseButton'),
+  animationLabel: $('#animationLabel'),
+  themeButton: $('#themeButton'),
+  resetButton: $('#resetButton'),
+  exportButton: $('#exportButton')
 };
 
 let result = null;
@@ -56,40 +113,85 @@ function readPositive(input, fallback) {
 }
 
 function syncYieldStressRange(R, G) {
-  const tauW = G * R / 2;
+  const tauW = (G * R) / 2;
   const maximum = Math.max(1, 1.5 * tauW);
   els.yieldStress.max = String(maximum);
-  els.yieldStress.step = String(maximum / 200);
+  els.yieldStress.step = 'any';
+  els.yieldStressNumber.max = String(maximum);
+  els.yieldStressNumber.step = 'any';
   if (Number(els.yieldStress.value) > maximum) els.yieldStress.value = String(maximum);
+  if (document.activeElement !== els.yieldStressNumber && Number(els.yieldStressNumber.value) > maximum) {
+    els.yieldStressNumber.value = String(maximum);
+  }
   els.yieldStressMax.textContent = `${formatValue(maximum, 2)} Pa (1,5 τw)`;
 }
 
+function readYieldStress() {
+  const raw = Math.max(0, Number(els.yieldStressNumber.value) || 0);
+  const maxAttr = els.yieldStressNumber.max;
+  const max = maxAttr === '' ? Infinity : Number(maxAttr);
+  return Number.isFinite(max) ? Math.min(raw, max) : raw;
+}
+
 function getParameters() {
-  const R = readPositive(els.radius, defaults.radius);
-  const G = Math.max(0, Number(els.pressureGradientInput.value) || 0);
-  syncYieldStressRange(R, G);
   return {
     model: els.model.value,
-    R,
-    G,
-    mu: 10 ** Number(els.viscosity.value),
-    H: 10 ** Number(els.consistency.value),
-    n: Math.max(0.05, Number(els.flowIndex.value)),
-    tau0: Math.max(0, Number(els.yieldStress.value) || 0)
+    R: readPositive(els.radius, defaults.radius),
+    pressureGradient: Math.max(0, Number(els.pressureGradientInput.value) || 0),
+    pressureDifference: Math.max(0, Number(els.pressureDifference.value) || 0),
+    tubeLength: readPositive(els.tubeLength, defaults.tubeLength),
+    flowRate: Math.max(0, Number(els.flowRateInput.value) || 0),
+    density: readPositive(els.density, defaults.density),
+    soundSpeed: readPositive(els.soundSpeed, defaults.soundSpeed),
+    mu: readPositive(els.viscosityNumber, defaults.viscosity),
+    H: readPositive(els.consistencyNumber, defaults.consistency),
+    n: Math.max(0.2, Number(els.flowIndexNumber.value) || defaults.flowIndex),
+    tau0: Math.max(0, Number(els.yieldStressNumber.value) || 0)
   };
+}
+
+function flowRateAtG(G, params) {
+  return calculate({ ...params, G }).flowRate;
+}
+
+function solveForG(targetQ, params) {
+  if (!Number.isFinite(targetQ) || targetQ <= 0) return 0;
+  const hasYield = params.model === 'bingham' || params.model === 'herschelBulkley';
+  const minG = hasYield && params.tau0 > 0 ? (2 * params.tau0) / params.R : 0;
+  if (flowRateAtG(minG, params) >= targetQ) return minG;
+
+  let lo = minG;
+  let hi = Math.max(minG + 1, Number(params.G) || defaults.pressureGradient);
+  for (let safety = 0; safety < 30; safety += 1) {
+    const qHi = flowRateAtG(hi, params);
+    if (qHi >= targetQ || hi > 1e12) break;
+    hi *= 2;
+  }
+
+  for (let i = 0; i < 50; i += 1) {
+    const mid = (lo + hi) / 2;
+    const qMid = flowRateAtG(mid, params);
+    if (qMid < targetQ) lo = mid;
+    else hi = mid;
+    if (hi - lo < 1e-6 * hi) break;
+  }
+  return (lo + hi) / 2;
 }
 
 function calculate(params) {
   const { model, R, G } = params;
-  const tauW = G * R / 2;
+  const tauW = (G * R) / 2;
   const hasYield = model === 'bingham' || model === 'herschelBulkley';
   const tau0 = hasYield ? params.tau0 : 0;
   const flowing = !hasYield || tauW > tau0;
-  const Pl = flowing && tauW > 0 ? Math.min(1, tau0 / tauW) : hasYield ? 1 : 0;
+  const Pl = flowing && tauW > 0 ? Math.min(1, tau0 / tauW) : (hasYield ? 1 : 0);
   const Rp = Pl * R;
   const samples = [];
   const count = 201;
   let maxVelocity = 0;
+
+  const n = Math.max(0.2, Number(params.n) || 1);
+  const modelN = model === 'powerLaw' || model === 'herschelBulkley' ? n : 1;
 
   for (let i = 0; i < count; i += 1) {
     const x = i / (count - 1);
@@ -100,22 +202,22 @@ function calculate(params) {
 
     if (flowing && G > 0) {
       if (model === 'newtonian') {
-        velocity = G * (R * R - r * r) / (4 * params.mu);
-        shearRate = G * r / (2 * params.mu);
+        velocity = (G * (R * R - r * r)) / (4 * params.mu);
+        shearRate = (G * r) / (2 * params.mu);
       } else if (model === 'powerLaw') {
         const exponent = (params.n + 1) / params.n;
-        velocity = params.n * R / (params.n + 1) * (tauW / params.H) ** (1 / params.n) * (1 - x ** exponent);
+        velocity = (params.n * R / (params.n + 1)) * (tauW / params.H) ** (1 / params.n) * (1 - x ** exponent);
         shearRate = (stress / params.H) ** (1 / params.n);
       } else if (model === 'bingham') {
         if (x <= Pl) {
-          velocity = R * tauW / (2 * params.mu) * (1 - Pl) ** 2;
+          velocity = (R * tauW / (2 * params.mu)) * (1 - Pl) ** 2;
         } else {
-          velocity = R * tauW / (2 * params.mu) * ((1 - Pl) ** 2 - (x - Pl) ** 2);
+          velocity = (R * tauW / (2 * params.mu)) * ((1 - Pl) ** 2 - (x - Pl) ** 2);
           shearRate = (stress - tau0) / params.mu;
         }
       } else {
         const exponent = (params.n + 1) / params.n;
-        const factor = params.n * R / (params.n + 1) * (tauW / params.H) ** (1 / params.n);
+        const factor = (params.n * R / (params.n + 1)) * (tauW / params.H) ** (1 / params.n);
         if (x <= Pl) {
           velocity = factor * (1 - Pl) ** exponent;
         } else {
@@ -138,7 +240,10 @@ function calculate(params) {
   }
   const flowRate = 2 * Math.PI * areaIntegral;
   const meanVelocity = flowRate / (Math.PI * R * R);
-  const wallShearRate = samples.at(-1).shearRate;
+  const D = 2 * R;
+  const wallShearRate = meanVelocity > 0
+    ? ((3 * modelN + 1) / (4 * modelN)) * (8 * meanVelocity / D)
+    : 0;
 
   return { params, G, tauW, tau0, flowing, Pl, Rp, samples, maxVelocity, meanVelocity, flowRate, wallShearRate };
 }
@@ -150,40 +255,134 @@ function formatValue(value, digits = 3) {
   return value.toLocaleString('pt-BR', { maximumFractionDigits: digits });
 }
 
+function formatNumeric(value) {
+  if (!Number.isFinite(value)) return '';
+  return String(value);
+}
+
 function updateRange(input) {
-  const progress = (Number(input.value) - Number(input.min)) / (Number(input.max) - Number(input.min)) * 100;
+  const min = Number(input.min);
+  const max = Number(input.max);
+  const value = Number(input.value);
+  const progress = (value - min) / (max - min) * 100;
   input.style.setProperty('--range-progress', `${progress}%`);
 }
 
-function updateControls(params) {
+function setInputValue(input, value) {
+  if (document.activeElement === input) return;
+  input.value = formatNumeric(value);
+}
+
+function syncSliderAndNumber(numberInput, slider, isLog) {
+  numberInput.addEventListener('input', () => {
+    const v = Number(numberInput.value);
+    if (!Number.isFinite(v)) return;
+    const min = Number(slider.min);
+    const max = Number(slider.max);
+    if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) return;
+    if (isLog) {
+      if (v <= 0) return;
+      slider.value = String(Math.max(min, Math.min(max, Math.log10(v))));
+    } else {
+      slider.value = String(Math.max(min, Math.min(max, v)));
+    }
+  });
+  slider.addEventListener('input', () => {
+    const v = Number(slider.value);
+    if (!Number.isFinite(v)) return;
+    numberInput.value = String(isLog ? 10 ** v : v);
+  });
+}
+
+function updateControls(params, mode = {}) {
+  const flowMode = els.flowMode.value;
+  const pressureSpecMode = els.pressureSpecMode.value;
   const info = modelInfo[params.model];
   els.modelDescription.textContent = info.description;
   els.resultTitle.textContent = `${info.name} em duto circular`;
   els.equationTag.textContent = info.tag;
+
   $$('[data-models]').forEach((field) => {
     field.hidden = !field.dataset.models.split(',').includes(params.model);
   });
+
   $('#viscositySymbol').textContent = params.model === 'bingham' ? 'μₚ' : 'μ';
+
+  els.pressureSpecModeWrap.hidden = flowMode !== 'pressureGradient';
+  els.pressureGradientField.hidden = flowMode !== 'pressureGradient' || pressureSpecMode !== 'gradient';
+  els.pressureDifferenceField.hidden = flowMode !== 'pressureGradient' || pressureSpecMode !== 'differential';
+  els.flowRateField.hidden = flowMode !== 'flowRate';
+
+  setInputValue(els.viscosityNumber, params.mu);
+  els.viscosity.value = String(Math.max(Number(els.viscosity.min), Math.min(Number(els.viscosity.max), Math.log10(params.mu))));
+  setInputValue(els.consistencyNumber, params.H);
+  els.consistency.value = String(Math.max(Number(els.consistency.min), Math.min(Number(els.consistency.max), Math.log10(params.H))));
+  setInputValue(els.flowIndexNumber, params.n);
+  els.flowIndex.value = String(Math.max(Number(els.flowIndex.min), Math.min(Number(els.flowIndex.max), params.n)));
+  setInputValue(els.yieldStressNumber, params.tau0);
+  els.yieldStress.value = String(Math.max(Number(els.yieldStress.min), Math.min(Number(els.yieldStress.max), params.tau0)));
+  [els.viscosity, els.consistency, els.flowIndex, els.yieldStress].forEach(updateRange);
+
   els.viscosityOutput.textContent = `${formatValue(params.mu, 4)} Pa·s`;
   els.consistencyOutput.textContent = `${formatValue(params.H, 4)} Pa·sⁿ`;
   els.flowIndexOutput.textContent = formatValue(params.n, 2);
   els.yieldStressOutput.textContent = `${formatValue(params.tau0, 1)} Pa`;
-  [els.viscosity, els.consistency, els.flowIndex, els.yieldStress].forEach(updateRange);
+
+  const pressureDifference = mode.pressureDifference ?? (params.G * params.tubeLength);
+  if (flowMode === 'pressureGradient' && pressureSpecMode === 'differential') {
+    setInputValue(els.pressureGradientInput, params.G);
+  } else {
+    setInputValue(els.pressureDifference, pressureDifference);
+  }
+  if (flowMode === 'flowRate') {
+    setInputValue(els.pressureGradientInput, params.G);
+  }
 }
 
-function updateMetrics(data) {
+function updateMetrics(data, mode = {}) {
+  const params = data.params;
+  const V = data.meanVelocity;
+  const D = 2 * params.R;
+  const n = params.model === 'powerLaw' || params.model === 'herschelBulkley' ? params.n : 1;
+  const K = params.model === 'newtonian' || params.model === 'bingham' ? params.mu : params.H;
+  const tau0 = params.model === 'bingham' || params.model === 'herschelBulkley' ? params.tau0 : 0;
+  const gammaW = V > 0 ? ((3 * n + 1) / (4 * n)) * (8 * V / D) : 0;
+  const denom = tau0 + K * (gammaW ** n);
+  const re = V > 0 && denom > 0 ? (8 * params.density * V * V) / denom : 0;
+  const mach = params.soundSpeed > 0 ? V / params.soundSpeed : 0;
+
   els.maxVelocity.textContent = formatValue(data.maxVelocity);
   els.meanVelocity.textContent = formatValue(data.meanVelocity);
   els.flowRate.textContent = formatValue(data.flowRate);
   els.wallStress.textContent = formatValue(data.tauW, 2);
-  els.pressureGradient.textContent = `${formatValue(data.G, 2)} Pa/m`;
+  els.pressureGradient.textContent = `${formatValue(params.G, 2)} Pa/m`;
   els.plasticityIndex.textContent = data.tau0 > 0 ? formatValue(data.Pl, 4) : '0';
   els.plugRadius.textContent = data.tau0 > 0 ? `${formatValue(data.Rp * 1000, 2)} mm` : 'Não se aplica';
   els.plugArea.textContent = data.tau0 > 0 ? `${formatValue(data.Pl * data.Pl * 100, 1)} %` : '0 %';
   els.wallShearRate.textContent = `${formatValue(data.wallShearRate, 3)} s⁻¹`;
+  els.pressureDifferenceOutput.textContent = `${formatValue(mode.pressureDifference ?? (params.G * params.tubeLength), 2)} Pa`;
+  els.reynoldsNumber.textContent = formatValue(re, 2);
+  els.machNumber.textContent = formatValue(mach, 3);
   els.legendMax.textContent = `${formatValue(data.maxVelocity)} m/s`;
-  els.flowState.classList.toggle('stopped', !data.flowing || data.maxVelocity === 0);
-  els.flowState.innerHTML = `<span></span>${data.flowing && data.maxVelocity > 0 ? 'Escoando' : 'Sem escoamento'}`;
+
+  const flowing = data.flowing && data.maxVelocity > 0;
+  const turbulent = re > 2100;
+  const supersonic = mach > 1;
+  els.flowState.classList.toggle('stopped', !flowing);
+  els.flowState.classList.toggle('turbulent', flowing && turbulent);
+  els.flowState.classList.toggle('supersonic', flowing && supersonic);
+
+  if (!flowing) {
+    els.flowState.innerHTML = '<span></span>Sem escoamento';
+  } else if (turbulent && supersonic) {
+    els.flowState.innerHTML = '<span></span>Turbulento / Supersônico';
+  } else if (turbulent) {
+    els.flowState.innerHTML = '<span></span>Turbulento';
+  } else if (supersonic) {
+    els.flowState.innerHTML = '<span></span>Supersônico';
+  } else {
+    els.flowState.innerHTML = '<span></span>Escoando';
+  }
 }
 
 function typesetEquations() {
@@ -387,10 +586,36 @@ function animate(timestamp) {
 }
 
 function refresh() {
-  const params = getParameters();
-  updateControls(params);
+  let params = getParameters();
+  const flowMode = els.flowMode.value;
+  const pressureSpecMode = els.pressureSpecMode.value;
+
+  if (flowMode === 'pressureGradient') {
+    if (pressureSpecMode === 'differential') {
+      params.G = params.pressureDifference / params.tubeLength;
+    } else {
+      params.G = params.pressureGradient;
+    }
+  } else {
+    params.G = solveForG(params.flowRate, { ...params, G: defaults.pressureGradient });
+  }
+
+  syncYieldStressRange(params.R, params.G);
+
+  for (let iter = 0; iter < 5; iter += 1) {
+    const newTau0 = readYieldStress();
+    if (Math.abs(newTau0 - params.tau0) < 1e-12) break;
+    params.tau0 = newTau0;
+    if (flowMode === 'flowRate') {
+      params.G = solveForG(params.flowRate, { ...params, G: params.G });
+      syncYieldStressRange(params.R, params.G);
+    }
+  }
+
+  const pressureDifference = params.G * params.tubeLength;
+  updateControls(params, { flowMode, pressureSpecMode, pressureDifference });
   result = calculate(params);
-  updateMetrics(result);
+  updateMetrics(result, { flowMode, pressureSpecMode, pressureDifference });
   updateEquation(result);
   drawProfileChart();
   drawFlow();
@@ -410,13 +635,25 @@ function exportCsv() {
 
 function reset() {
   els.model.value = defaults.model;
+  els.flowMode.value = defaults.flowMode;
+  els.pressureSpecMode.value = defaults.pressureSpecMode;
   els.radius.value = defaults.radius;
   els.pressureGradientInput.value = defaults.pressureGradient;
-  els.viscosity.value = defaults.viscosityLog;
-  els.consistency.value = defaults.consistencyLog;
+  els.pressureDifference.value = defaults.pressureDifference;
+  els.tubeLength.value = defaults.tubeLength;
+  els.flowRateInput.value = defaults.flowRate;
+  els.density.value = defaults.density;
+  els.soundSpeed.value = defaults.soundSpeed;
+  els.viscosity.value = Math.log10(defaults.viscosity);
+  els.viscosityNumber.value = defaults.viscosity;
+  els.consistency.value = Math.log10(defaults.consistency);
+  els.consistencyNumber.value = defaults.consistency;
   els.flowIndex.value = defaults.flowIndex;
+  els.flowIndexNumber.value = defaults.flowIndex;
   els.yieldStress.value = defaults.yieldStress;
+  els.yieldStressNumber.value = defaults.yieldStress;
   [els.showVelocity, els.showStress, els.showPlug, els.showParticles].forEach((input) => { input.checked = true; });
+  [els.viscosity, els.consistency, els.flowIndex, els.yieldStress].forEach(updateRange);
   refresh();
 }
 
@@ -431,6 +668,11 @@ function handleProfilePointer(event) {
   els.chartReadout.textContent = `r/R ${signed.toFixed(2)}  ·  U ${formatValue(point.velocity, 4)} m/s  ·  τ ${formatValue(point.stress, 3)} Pa  ·  γ̇ ${formatValue(point.shearRate, 3)} s⁻¹`;
   drawProfileChart();
 }
+
+syncSliderAndNumber(els.viscosityNumber, els.viscosity, true);
+syncSliderAndNumber(els.consistencyNumber, els.consistency, true);
+syncSliderAndNumber(els.flowIndexNumber, els.flowIndex, false);
+syncSliderAndNumber(els.yieldStressNumber, els.yieldStress, false);
 
 $$('input, select').forEach((input) => input.addEventListener('input', refresh));
 window.addEventListener('resize', () => { drawProfileChart(); drawFlow(); });
@@ -450,7 +692,7 @@ els.resetButton.addEventListener('click', reset);
 els.exportButton.addEventListener('click', exportCsv);
 
 resetParticles();
-refresh();
+reset();
 window.addEventListener('load', () => updateEquation(result));
 cancelAnimationFrame(animationFrame);
 animationFrame = requestAnimationFrame(animate);
