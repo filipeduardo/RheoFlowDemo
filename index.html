@@ -28,6 +28,9 @@
         Simulação em tempo real
       </div>
       <div class="top-actions">
+        <button class="icon-button a11y-icon" id="accessibilityButton" type="button" aria-label="Acessibilidade" aria-expanded="false" title="Acessibilidade">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="2.5"/><path d="M12 11v8m-4-3 2-2.5m6 2.5-2-2.5M5 21c2-4 6-6 7-6s5 2 7 6"/></svg>
+        </button>
         <button class="icon-button" id="themeButton" type="button" aria-label="Alternar tema" title="Alternar tema">
           <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9c0-.5 0-1-.1-1.4A7 7 0 0 1 13.4 3H12Z"/></svg>
         </button>
@@ -38,6 +41,36 @@
         </button>
       </div>
     </header>
+
+    <div class="a11y-popover" id="accessibilityPopover" role="dialog" aria-label="Acessibilidade">
+      <div class="a11y-section">
+        <h3>Painéis</h3>
+        <label class="toggle-row">
+          <span>Mostrar configuração</span>
+          <input id="showControlsPanel" type="checkbox" checked><span class="toggle"></span>
+        </label>
+        <label class="toggle-row">
+          <span>Mostrar resultados</span>
+          <input id="showDashboardPanel" type="checkbox" checked><span class="toggle"></span>
+        </label>
+      </div>
+      <div class="a11y-section">
+        <h3>Tamanho da fonte</h3>
+        <div class="segmented" role="radiogroup" aria-label="Tamanho da fonte">
+          <button type="button" data-value="default" class="active">A</button>
+          <button type="button" data-value="large">A+</button>
+          <button type="button" data-value="larger">A++</button>
+        </div>
+      </div>
+      <div class="a11y-section">
+        <h3>Espessura das linhas</h3>
+        <div class="segmented" role="radiogroup" aria-label="Espessura das linhas">
+          <button type="button" data-value="default" class="active">—</button>
+          <button type="button" data-value="thick">—</button>
+          <button type="button" data-value="thicker">—</button>
+        </div>
+      </div>
+    </div>
 
     <main class="workspace">
       <aside class="controls-panel">
