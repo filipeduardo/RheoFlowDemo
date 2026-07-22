@@ -68,14 +68,53 @@
             <h2>Geometria e operação</h2>
             <span class="unit-system">SI</span>
           </div>
+
+          <label class="field-label" for="flowMode">Modo de especificação</label>
+          <div class="select-wrap">
+            <select id="flowMode">
+              <option value="pressureGradient" selected>Gradiente de pressão fixo</option>
+              <option value="flowRate">Vazão fixa</option>
+            </select>
+            <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg>
+          </div>
+
+          <label class="field-label" for="pressureSpecMode">Forma do gradiente</label>
+          <div class="select-wrap" id="pressureSpecModeWrap">
+            <select id="pressureSpecMode">
+              <option value="gradient" selected>Gradiente direto</option>
+              <option value="differential">Diferencial de pressão</option>
+            </select>
+            <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg>
+          </div>
+
           <div class="control-grid">
             <label class="number-field">
               <span>Raio do duto</span>
               <span class="input-row"><input id="radius" type="number" min="0.001" step="0.005" value="0.05"><small>m</small></span>
             </label>
-            <label class="number-field">
+            <label class="number-field" id="pressureGradientField">
               <span>Gradiente de pressão</span>
               <span class="input-row"><input id="pressureGradientInput" type="number" min="0" step="1000" value="12000"><small>Pa/m</small></span>
+            </label>
+            <label class="number-field" id="pressureDifferenceField" hidden>
+              <span>Diferencial de pressão</span>
+              <span class="input-row"><input id="pressureDifference" type="number" min="0" step="1000" value="6000"><small>Pa</small></span>
+            </label>
+            <label class="number-field" id="flowRateField" hidden>
+              <span>Vazão volumétrica</span>
+              <span class="input-row"><input id="flowRateInput" type="number" min="0" step="1e-6" value="0.001"><small>m³/s</small></span>
+            </label>
+            <label class="number-field">
+              <span>Comprimento do tubo</span>
+              <span class="input-row"><input id="tubeLength" type="number" min="0.001" step="0.1" value="0.5"><small>m</small></span>
+            </label>
+            <label class="number-field">
+              <span>Densidade do fluido</span>
+              <span class="input-row"><input id="density" type="number" min="0.001" step="10" value="1000"><small>kg/m³</small></span>
+            </label>
+            <label class="number-field">
+              <span>Velocidade do som</span>
+              <span class="input-row"><input id="soundSpeed" type="number" min="1" step="10" value="1500"><small>m/s</small></span>
             </label>
           </div>
         </section>
@@ -83,23 +122,23 @@
         <section class="control-section rheology-section">
           <h2>Propriedades reológicas</h2>
           <div class="parameter" data-models="newtonian,bingham">
-            <div class="parameter-label"><label for="viscosity">Viscosidade <span id="viscositySymbol">μₚ</span></label><output id="viscosityOutput"></output></div>
+            <div class="parameter-label"><label for="viscosity">Viscosidade <span id="viscositySymbol">μₚ</span></label><span class="param-value"><output id="viscosityOutput"></output><input id="viscosityNumber" type="number" step="any" min="0.001" max="10" value="0.1"></span></div>
             <input id="viscosity" type="range" min="-3" max="1" step="0.01" value="-1">
             <div class="range-ends"><span>0,001</span><span>10 Pa·s</span></div>
           </div>
           <div class="parameter" data-models="powerLaw,herschelBulkley">
-            <div class="parameter-label"><label for="consistency">Consistência <span>H</span></label><output id="consistencyOutput"></output></div>
+            <div class="parameter-label"><label for="consistency">Consistência <span>H</span></label><span class="param-value"><output id="consistencyOutput"></output><input id="consistencyNumber" type="number" step="any" min="0.001" max="100" value="0.5012"></span></div>
             <input id="consistency" type="range" min="-3" max="2" step="0.01" value="-0.3">
             <div class="range-ends"><span>0,001</span><span>100 Pa·sⁿ</span></div>
           </div>
           <div class="parameter" data-models="powerLaw,herschelBulkley">
-            <div class="parameter-label"><label for="flowIndex">Índice de escoamento <span>n</span></label><output id="flowIndexOutput"></output></div>
+            <div class="parameter-label"><label for="flowIndex">Índice de escoamento <span>n</span></label><span class="param-value"><output id="flowIndexOutput"></output><input id="flowIndexNumber" type="number" step="0.01" min="0.2" max="1.8" value="0.65"></span></div>
             <input id="flowIndex" type="range" min="0.2" max="1.8" step="0.01" value="0.65">
             <div class="range-ends"><span>0,20</span><span>1,80</span></div>
             <div class="behavior-scale"><span>Pseudoplástico</span><span>Newtoniano</span><span>Dilatante</span></div>
           </div>
           <div class="parameter" data-models="bingham,herschelBulkley">
-            <div class="parameter-label"><label for="yieldStress">Tensão limite <span>τ₀</span></label><output id="yieldStressOutput"></output></div>
+            <div class="parameter-label"><label for="yieldStress">Tensão limite <span>τ₀</span></label><span class="param-value"><output id="yieldStressOutput"></output><input id="yieldStressNumber" type="number" step="any" min="0" value="45"></span></div>
             <input id="yieldStress" type="range" min="0" max="450" step="2.25" value="45">
             <div class="range-ends"><span>0</span><span id="yieldStressMax">450 Pa</span></div>
           </div>
@@ -201,10 +240,13 @@
             <div class="card-header"><div><span class="card-kicker">Diagnóstico</span><h3>Regime e estrutura</h3></div></div>
             <div class="diagnostic-list">
               <div><span>Gradiente de pressão</span><strong id="pressureGradient">—</strong></div>
+              <div><span>Diferencial de pressão</span><strong id="pressureDifferenceOutput">—</strong></div>
               <div><span>Índice de plasticidade (Pl)</span><strong id="plasticityIndex">—</strong></div>
               <div><span>Raio do plugue</span><strong id="plugRadius">—</strong></div>
               <div><span>Área não cisalhada</span><strong id="plugArea">—</strong></div>
               <div><span>Taxa na parede</span><strong id="wallShearRate">—</strong></div>
+              <div><span>Reynolds não-newtoniano</span><strong id="reynoldsNumber">—</strong></div>
+              <div><span>Número de Mach</span><strong id="machNumber">—</strong></div>
             </div>
           </article>
         </div>
