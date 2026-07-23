@@ -267,7 +267,7 @@
               <div class="equation" id="flowRateEquation"></div>
             </div>
             <div class="equation-group compact">
-              <span class="equation-label">Reynolds Metzner–Reed — Herschel–Bulkley generalizado</span>
+              <span class="equation-label">Reynolds de Herschel–Bulkley generalizado — estilo Metzner–Reed</span>
               <div class="equation" id="reynoldsEquation"></div>
             </div>
             <div class="equation-vars" id="equationVars"></div>
@@ -276,13 +276,32 @@
           <article class="card diagnostics-card">
             <div class="card-header"><div><span class="card-kicker">Diagnóstico</span><h3>Regime e estrutura</h3></div></div>
             <div class="diagnostic-list">
-              <div><span>Gradiente de pressão <span class="math">G</span></span><strong id="pressureGradient">—</strong></div>
-              <div><span>Diferencial de pressão <span class="math">Δp</span></span><strong id="pressureDifferenceOutput">—</strong></div>
+              <div>
+                <span>Gradiente de pressão <span class="math">G</span></span>
+                <span class="diagnostic-value">
+                  <strong id="pressureGradient">—</strong>
+                  <span class="unit-denominator">/m</span>
+                  <select class="unit-select" data-dimension="pressure" aria-label="Unidade de pressão"><option value="Pa" selected>Pa</option><option value="kPa">kPa</option><option value="psi">psi</option></select>
+                </span>
+              </div>
+              <div>
+                <span>Diferencial de pressão <span class="math">Δp</span></span>
+                <span class="diagnostic-value">
+                  <strong id="pressureDifferenceOutput">—</strong>
+                  <select class="unit-select" data-dimension="pressure" aria-label="Unidade de pressão"><option value="Pa" selected>Pa</option><option value="kPa">kPa</option><option value="psi">psi</option></select>
+                </span>
+              </div>
               <div><span>Índice de plasticidade <span class="math">Pl</span></span><strong id="plasticityIndex">—</strong></div>
-              <div><span>Raio do plugue <span class="math">R<sub>p</sub></span></span><strong id="plugRadius">—</strong></div>
+              <div>
+                <span>Raio do plugue <span class="math">R<sub>p</sub></span></span>
+                <span class="diagnostic-value">
+                  <strong id="plugRadius">—</strong>
+                  <select class="unit-select" data-dimension="length" aria-label="Unidade de comprimento" id="plugRadiusUnit"><option value="m" selected>m</option><option value="ft">ft</option><option value="in">in</option></select>
+                </span>
+              </div>
               <div><span>Área não cisalhada <span class="math">A<sub>nc</sub></span></span><strong id="plugArea">—</strong></div>
               <div><span>Taxa de cisalhamento na parede <span class="math">γ̇<sub>w</sub></span></span><strong id="wallShearRate">—</strong></div>
-              <div><span>Metzner–Reed style Generalized Herschel–Bulkley Reynolds <span class="math">Re</span></span><strong id="reynoldsNumber">—</strong></div>
+              <div><span>Reynolds generalizado de Herschel–Bulkley estilo Metzner–Reed <span class="math">Re</span></span><strong id="reynoldsNumber">—</strong></div>
               <div><span>Número de Mach <span class="math">Ma</span></span><strong id="machNumber">—</strong></div>
             </div>
           </article>

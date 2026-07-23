@@ -175,6 +175,7 @@ const els = {
   machNumber: $('#machNumber'),
   plasticityIndex: $('#plasticityIndex'),
   plugRadius: $('#plugRadius'),
+  plugRadiusUnit: $('#plugRadiusUnit'),
   plugArea: $('#plugArea'),
   wallShearRate: $('#wallShearRate'),
   equation: $('#equation'),
@@ -476,12 +477,18 @@ function updateMetrics(data, mode = {}) {
   els.flowRateUnit.textContent = getUnitLabel('flowRate');
   els.wallStress.textContent = formatValue(fromSI(data.tauW, 'pressure'));
   els.wallStressUnit.textContent = getUnitLabel('pressure');
-  els.pressureGradient.textContent = formatDisplay(params.G, 'pressureGradient');
+  els.pressureGradient.textContent = formatValue(fromSI(params.G, 'pressureGradient'), 3);
   els.plasticityIndex.textContent = data.tau0 > 0 ? formatValue(data.Pl, 4) : '0';
-  els.plugRadius.textContent = data.tau0 > 0 ? formatDisplay(data.Rp, 'length', 4) : 'Não se aplica';
+  if (data.tau0 > 0) {
+    els.plugRadius.textContent = formatValue(fromSI(data.Rp, 'length'), 4);
+    if (els.plugRadiusUnit) els.plugRadiusUnit.hidden = false;
+  } else {
+    els.plugRadius.textContent = 'Não se aplica';
+    if (els.plugRadiusUnit) els.plugRadiusUnit.hidden = true;
+  }
   els.plugArea.textContent = data.tau0 > 0 ? `${formatValue(data.Pl * data.Pl * 100, 1)} %` : '0 %';
   els.wallShearRate.textContent = `${formatValue(data.wallShearRate, 3)} s⁻¹`;
-  els.pressureDifferenceOutput.textContent = formatDisplay(mode.pressureDifference ?? (params.G * params.tubeLength), 'pressure');
+  els.pressureDifferenceOutput.textContent = formatValue(fromSI(mode.pressureDifference ?? (params.G * params.tubeLength), 'pressure'), 3);
   els.reynoldsNumber.textContent = formatValue(re, 2);
   els.machNumber.textContent = formatValue(mach, 3);
   els.legendMax.innerHTML = `<span class="math">U<sub>max</sub></span> = ${formatValue(fromSI(data.maxVelocity, 'velocity'))} ${getUnitLabel('velocity')}`;
@@ -842,7 +849,7 @@ function updateUnitSelects() {
     const dimension = select.dataset.dimension;
     if (dimension && units[dimension]) select.value = units[dimension];
   });
-  if (els.pressureGradientUnitDenominator) els.pressureGradientUnitDenominator.textContent = `/${getUnitDef('length', units.length).label}`;
+  $$('.unit-denominator').forEach((el) => { el.textContent = `/${getUnitDef('length', units.length).label}`; });
   if (els.soundSpeedUnit) els.soundSpeedUnit.textContent = getUnitLabel('velocity');
 }
 

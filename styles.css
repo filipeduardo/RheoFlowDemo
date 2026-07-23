@@ -187,6 +187,10 @@ input[type='range']::-moz-range-thumb { width: 9px; height: 9px; border-radius: 
 .diagnostic-list div { padding: 8px 0; border-top: 1px solid var(--border-soft); display: flex; justify-content: space-between; gap: 12px; font-size: calc(var(--font-scale, 1) * 9px); }
 .diagnostic-list span { color: var(--muted); }
 .diagnostic-list strong { font-family: var(--mono); font-weight: 500; }
+.diagnostic-value { display: flex; align-items: center; gap: 2px; }
+.diagnostic-list .unit-select { appearance: none; border: 0; background: transparent; color: var(--muted-2); font-family: var(--mono); font-size: calc(var(--font-scale, 1) * 9px); cursor: pointer; padding: 0 10px 0 2px; text-align: right; outline: none; }
+.diagnostic-list .unit-select:focus { color: var(--cyan); }
+.diagnostic-list .unit-denominator { color: var(--muted-2); font-family: var(--mono); font-size: calc(var(--font-scale, 1) * 9px); }
 .assumption-note { margin: 14px 2px 0; color: var(--muted-2); font-size: calc(var(--font-scale, 1) * 8px); text-align: center; }
 .equation-si-note { margin: -8px 18px 14px; color: var(--muted-2); font-size: calc(var(--font-scale, 1) * 8px); text-align: center; }
 
