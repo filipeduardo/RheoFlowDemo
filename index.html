@@ -99,7 +99,6 @@
         <section class="control-section">
           <div class="section-title-row">
             <h2>Geometria e operação</h2>
-            <span class="unit-system">SI</span>
           </div>
 
           <label class="field-label" for="flowMode">Modo de especificação</label>
@@ -123,31 +122,31 @@
           <div class="control-grid">
             <label class="number-field">
               <span>Raio do duto <span class="math">R</span></span>
-              <span class="input-row"><input id="radius" type="number" min="0.001" step="0.005" value="0.05"><small>m</small></span>
+              <span class="input-row"><input id="radius" type="number" min="0.001" step="0.005" value="0.05"><select class="unit-select" data-dimension="length" aria-label="Unidade de comprimento"><option value="m" selected>m</option><option value="ft">ft</option><option value="in">in</option></select></span>
             </label>
             <label class="number-field" id="pressureGradientField">
               <span>Gradiente de pressão <span class="math">G</span></span>
-              <span class="input-row"><input id="pressureGradientInput" type="number" min="0" step="1000" value="12000"><small>Pa/m</small></span>
+              <span class="input-row"><input id="pressureGradientInput" type="number" min="0" step="1000" value="12000"><select class="unit-select" data-dimension="pressure" aria-label="Unidade de pressão"><option value="Pa" selected>Pa</option><option value="kPa">kPa</option><option value="psi">psi</option></select><span class="unit-denominator" id="pressureGradientUnitDenominator">/m</span></span>
             </label>
             <label class="number-field" id="pressureDifferenceField" hidden>
               <span>Diferencial de pressão <span class="math">Δp</span></span>
-              <span class="input-row"><input id="pressureDifference" type="number" min="0" step="1000" value="6000"><small>Pa</small></span>
+              <span class="input-row"><input id="pressureDifference" type="number" min="0" step="1000" value="6000"><select class="unit-select" data-dimension="pressure" aria-label="Unidade de pressão"><option value="Pa" selected>Pa</option><option value="kPa">kPa</option><option value="psi">psi</option></select></span>
             </label>
             <label class="number-field" id="flowRateField" hidden>
               <span>Vazão volumétrica <span class="math">Q</span></span>
-              <span class="input-row"><input id="flowRateInput" type="number" min="0" step="1e-6" value="0.001"><small>m³/s</small></span>
+              <span class="input-row"><input id="flowRateInput" type="number" min="0" step="0.1" value="86.4"><select class="unit-select" data-dimension="flowRate" aria-label="Unidade de vazão"><option value="m3/d" selected>m³/d</option><option value="bbl/d">bbl/d</option><option value="MMSCFD">MMSCFD</option><option value="GPM">GPM</option></select></span>
             </label>
             <label class="number-field">
               <span>Comprimento do tubo <span class="math">L</span></span>
-              <span class="input-row"><input id="tubeLength" type="number" min="0.001" step="0.1" value="0.5"><small>m</small></span>
+              <span class="input-row"><input id="tubeLength" type="number" min="0.001" step="0.1" value="0.5"><select class="unit-select" data-dimension="length" aria-label="Unidade de comprimento"><option value="m" selected>m</option><option value="ft">ft</option><option value="in">in</option></select></span>
             </label>
             <label class="number-field">
               <span>Densidade do fluido <span class="math">ρ</span></span>
-              <span class="input-row"><input id="density" type="number" min="0.001" step="10" value="1000"><small>kg/m³</small></span>
+              <span class="input-row"><input id="density" type="number" step="10" value="1000"><select class="unit-select" data-dimension="density" aria-label="Unidade de densidade"><option value="kg/m3" selected>kg/m³</option><option value="ppg">ppg</option><option value="api">°API</option></select></span>
             </label>
             <label class="number-field">
               <span>Velocidade do som <span class="math">c</span></span>
-              <span class="input-row"><input id="soundSpeed" type="number" min="1" step="10" value="1500"><small>m/s</small></span>
+              <span class="input-row"><input id="soundSpeed" type="number" min="1" step="10" value="1500"><small id="soundSpeedUnit">m/s</small></span>
             </label>
           </div>
         </section>
@@ -210,19 +209,19 @@
         <div class="metric-grid">
           <article class="metric-card accent-cyan">
             <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 12h16m-5-5 5 5-5 5"/></svg></div>
-            <div><span>Velocidade máxima <span class="math">U<sub>max</sub></span></span><strong id="maxVelocity">—</strong><small>m/s</small></div>
+            <div><span>Velocidade máxima <span class="math">U<sub>max</sub></span></span><strong id="maxVelocity">—</strong><small id="maxVelocityUnit">m/s</small></div>
           </article>
           <article class="metric-card accent-blue">
             <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 18V6m5 12V9m5 9V4m5 14v-7"/></svg></div>
-            <div><span>Velocidade média <span class="math">U</span></span><strong id="meanVelocity">—</strong><small>m/s</small></div>
+            <div><span>Velocidade média <span class="math">U</span></span><strong id="meanVelocity">—</strong><small id="meanVelocityUnit">m/s</small></div>
           </article>
           <article class="metric-card accent-violet">
             <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M5 19c4-11 10-11 14 0M8 14h8"/></svg></div>
-            <div><span>Vazão volumétrica <span class="math">Q</span></span><strong id="flowRate">—</strong><small>m³/s</small></div>
+            <div><span>Vazão volumétrica <span class="math">Q</span></span><strong id="flowRate">—</strong><small id="flowRateUnit">m³/d</small></div>
           </article>
           <article class="metric-card accent-amber">
             <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M7 8l5-5 5 5M7 16l5 5 5-5"/></svg></div>
-            <div><span>Tensão na parede <span class="math">τ<sub>w</sub></span></span><strong id="wallStress">—</strong><small>Pa</small></div>
+            <div><span>Tensão na parede <span class="math">τ<sub>w</sub></span></span><strong id="wallStress">—</strong><small id="wallStressUnit">Pa</small></div>
           </article>
         </div>
 
@@ -268,6 +267,7 @@
               <div class="equation" id="flowRateEquation"></div>
             </div>
             <div class="equation-vars" id="equationVars"></div>
+            <p class="equation-si-note">As equações apresentadas acima são expressas em unidades SI.</p>
           </article>
           <article class="card diagnostics-card">
             <div class="card-header"><div><span class="card-kicker">Diagnóstico</span><h3>Regime e estrutura</h3></div></div>

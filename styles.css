@@ -96,6 +96,9 @@ h3 { font-size: calc(var(--font-scale, 1) * 15px); letter-spacing: -.02em; margi
 .input-row:focus-within { border-color: var(--cyan); }
 .input-row input { min-width: 0; width: 100%; height: 100%; padding: 0 9px; border: 0; outline: 0; background: transparent; color: var(--text); font-family: var(--mono); font-size: calc(var(--font-scale, 1) * 11px); }
 .input-row small { padding-right: 9px; color: var(--muted-2); font-family: var(--mono); font-size: calc(var(--font-scale, 1) * 9px); }
+.input-row .unit-select { appearance: none; border: 0; background: transparent; color: var(--muted-2); font-family: var(--mono); font-size: calc(var(--font-scale, 1) * 9px); cursor: pointer; padding: 0 12px 0 0; text-align: right; outline: none; height: 100%; }
+.input-row .unit-select:focus { color: var(--cyan); }
+.input-row .unit-denominator { padding-right: 9px; color: var(--muted-2); font-family: var(--mono); font-size: calc(var(--font-scale, 1) * 9px); }
 .rheology-section h2, .display-section h2 { margin-bottom: 18px; }
 .parameter { margin-top: 18px; }
 .parameter[hidden], .number-field[hidden], [hidden] { display: none !important; }
@@ -185,6 +188,7 @@ input[type='range']::-moz-range-thumb { width: 9px; height: 9px; border-radius: 
 .diagnostic-list span { color: var(--muted); }
 .diagnostic-list strong { font-family: var(--mono); font-weight: 500; }
 .assumption-note { margin: 14px 2px 0; color: var(--muted-2); font-size: calc(var(--font-scale, 1) * 8px); text-align: center; }
+.equation-si-note { margin: -8px 18px 14px; color: var(--muted-2); font-size: calc(var(--font-scale, 1) * 8px); text-align: center; }
 
 .a11y-icon { opacity: .55; }
 .a11y-icon:hover, .a11y-icon[aria-expanded='true'] { opacity: 1; }
