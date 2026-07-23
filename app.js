@@ -18,6 +18,97 @@ const defaults = {
   soundSpeed: 1500
 };
 
+const units = {
+  pressure: 'Pa',
+  length: 'm',
+  flowRate: 'm3/d',
+  density: 'kg/m3'
+};
+
+const unitOptions = {
+  pressure: [
+    { value: 'Pa', label: 'Pa', toBase: 1 },
+    { value: 'kPa', label: 'kPa', toBase: 1000 },
+    { value: 'psi', label: 'psi', toBase: 6894.757293168 }
+  ],
+  length: [
+    { value: 'm', label: 'm', toBase: 1 },
+    { value: 'ft', label: 'ft', toBase: 0.3048 },
+    { value: 'in', label: 'in', toBase: 0.0254 }
+  ],
+  flowRate: [
+    { value: 'm3/d', label: 'm³/d', toBase: 1 / 86400 },
+    { value: 'bbl/d', label: 'bbl/d', toBase: 0.158987294928 / 86400 },
+    { value: 'MMSCFD', label: 'MMSCFD', toBase: 1e6 * 0.028316846592 / 86400 },
+    { value: 'GPM', label: 'GPM', toBase: 0.003785411784 / 60 }
+  ],
+  density: [
+    { value: 'kg/m3', label: 'kg/m³', toBase: 1, fromBase: (x) => x },
+    { value: 'ppg', label: 'ppg', toBase: 119.826427, fromBase: (x) => x / 119.826427 },
+    { value: 'api', label: '°API', toBase: (api) => 141.5 / (api + 131.5) * 1000, fromBase: (rho) => 141.5 / (rho / 1000) - 131.5 }
+  ]
+};
+
+function getUnitDef(dimension, unitValue) {
+  const option = unitOptions[dimension]?.find((u) => u.value === unitValue);
+  return option || unitOptions[dimension]?.[0];
+}
+
+function toSI(value, dimension, unitValue) {
+  if (dimension === 'pressureGradient') {
+    const pDef = getUnitDef('pressure', unitValue || units.pressure);
+    const lDef = getUnitDef('length', units.length);
+    return value * (pDef.toBase / lDef.toBase);
+  }
+  if (dimension === 'velocity') {
+    const lDef = getUnitDef('length', unitValue || units.length);
+    return value * lDef.toBase;
+  }
+  const def = getUnitDef(dimension, unitValue || units[dimension]);
+  if (typeof def.toBase === 'function') return def.toBase(value);
+  return value * def.toBase;
+}
+
+function fromSI(value, dimension, unitValue) {
+  if (dimension === 'pressureGradient') {
+    const pDef = getUnitDef('pressure', unitValue || units.pressure);
+    const lDef = getUnitDef('length', units.length);
+    return value * (lDef.toBase / pDef.toBase);
+  }
+  if (dimension === 'velocity') {
+    const lDef = getUnitDef('length', unitValue || units.length);
+    return value / lDef.toBase;
+  }
+  const def = getUnitDef(dimension, unitValue || units[dimension]);
+  if (typeof def.fromBase === 'function') return def.fromBase(value);
+  return value / def.toBase;
+}
+
+function getUnitLabel(dimension, unitValue) {
+  if (dimension === 'pressureGradient') {
+    const pDef = getUnitDef('pressure', unitValue || units.pressure);
+    const lDef = getUnitDef('length', units.length);
+    return `${pDef.label}/${lDef.label}`;
+  }
+  if (dimension === 'velocity') {
+    const lDef = getUnitDef('length', unitValue || units.length);
+    return `${lDef.label}/s`;
+  }
+  return getUnitDef(dimension, unitValue || units[dimension]).label;
+}
+
+function readDisplay(input, dimension, fallbackSI) {
+  const value = Number(input.value);
+  if (!Number.isFinite(value) || value <= 0) return fallbackSI;
+  return toSI(value, dimension);
+}
+
+function readNonNegativeDisplay(input, dimension, fallbackSI) {
+  const value = Number(input.value);
+  if (!Number.isFinite(value) || value < 0) return fallbackSI;
+  return toSI(value, dimension);
+}
+
 const modelInfo = {
   newtonian: {
     name: 'Newtoniano', tag: 'N',
@@ -52,6 +143,12 @@ const els = {
   flowRateField: $('#flowRateField'),
   density: $('#density'),
   soundSpeed: $('#soundSpeed'),
+  soundSpeedUnit: $('#soundSpeedUnit'),
+  maxVelocityUnit: $('#maxVelocityUnit'),
+  meanVelocityUnit: $('#meanVelocityUnit'),
+  flowRateUnit: $('#flowRateUnit'),
+  wallStressUnit: $('#wallStressUnit'),
+  pressureGradientUnitDenominator: $('#pressureGradientUnitDenominator'),
   viscosity: $('#viscosity'),
   viscosityNumber: $('#viscosityNumber'),
   viscosityOutput: $('#viscosityOutput'),
@@ -141,15 +238,17 @@ function readYieldStress() {
 }
 
 function getParameters() {
+  const densityRaw = Number(els.density.value);
+  const densitySI = Number.isFinite(densityRaw) ? toSI(densityRaw, 'density') : NaN;
   return {
     model: els.model.value,
-    R: readPositive(els.radius, defaults.radius),
-    pressureGradient: Math.max(0, Number(els.pressureGradientInput.value) || 0),
-    pressureDifference: Math.max(0, Number(els.pressureDifference.value) || 0),
-    tubeLength: readPositive(els.tubeLength, defaults.tubeLength),
-    flowRate: Math.max(0, Number(els.flowRateInput.value) || 0),
-    density: readPositive(els.density, defaults.density),
-    soundSpeed: readPositive(els.soundSpeed, defaults.soundSpeed),
+    R: readDisplay(els.radius, 'length', defaults.radius),
+    pressureGradient: readNonNegativeDisplay(els.pressureGradientInput, 'pressureGradient', defaults.pressureGradient),
+    pressureDifference: readNonNegativeDisplay(els.pressureDifference, 'pressure', defaults.pressureDifference),
+    tubeLength: readDisplay(els.tubeLength, 'length', defaults.tubeLength),
+    flowRate: readNonNegativeDisplay(els.flowRateInput, 'flowRate', defaults.flowRate),
+    density: Number.isFinite(densitySI) && densitySI > 0 ? densitySI : defaults.density,
+    soundSpeed: readDisplay(els.soundSpeed, 'velocity', defaults.soundSpeed),
     mu: readPositive(els.viscosityNumber, defaults.viscosity),
     H: readPositive(els.consistencyNumber, defaults.consistency),
     n: Math.max(0.2, Number(els.flowIndexNumber.value) || defaults.flowIndex),
@@ -264,7 +363,11 @@ function formatValue(value, digits = 3) {
 
 function formatNumeric(value) {
   if (!Number.isFinite(value)) return '';
-  return String(value);
+  return String(Number(value.toFixed(10)));
+}
+
+function formatDisplay(value, dimension, digits = 3) {
+  return `${formatValue(fromSI(value, dimension), digits)} ${getUnitLabel(dimension)}`;
 }
 
 function updateRange(input) {
@@ -335,14 +438,19 @@ function updateControls(params, mode = {}) {
   els.flowIndexOutput.textContent = formatValue(params.n, 2);
   els.yieldStressOutput.textContent = `${formatValue(params.tau0, 1)} Pa`;
 
+  setInputValue(els.radius, fromSI(params.R, 'length'));
+  setInputValue(els.tubeLength, fromSI(params.tubeLength, 'length'));
+  setInputValue(els.density, fromSI(params.density, 'density'));
+  setInputValue(els.soundSpeed, fromSI(params.soundSpeed, 'velocity'));
+
   const pressureDifference = mode.pressureDifference ?? (params.G * params.tubeLength);
   if (flowMode === 'pressureGradient' && pressureSpecMode === 'differential') {
-    setInputValue(els.pressureGradientInput, params.G);
+    setInputValue(els.pressureGradientInput, fromSI(params.G, 'pressureGradient'));
   } else {
-    setInputValue(els.pressureDifference, pressureDifference);
+    setInputValue(els.pressureDifference, fromSI(pressureDifference, 'pressure'));
   }
   if (flowMode === 'flowRate') {
-    setInputValue(els.pressureGradientInput, params.G);
+    setInputValue(els.pressureGradientInput, fromSI(params.G, 'pressureGradient'));
   }
 }
 
@@ -358,19 +466,23 @@ function updateMetrics(data, mode = {}) {
   const re = V > 0 && denom > 0 ? (8 * params.density * V * V) / denom : 0;
   const mach = params.soundSpeed > 0 ? V / params.soundSpeed : 0;
 
-  els.maxVelocity.textContent = formatValue(data.maxVelocity);
-  els.meanVelocity.textContent = formatValue(data.meanVelocity);
-  els.flowRate.textContent = formatValue(data.flowRate);
-  els.wallStress.textContent = formatValue(data.tauW, 2);
-  els.pressureGradient.textContent = `${formatValue(params.G, 2)} Pa/m`;
+  els.maxVelocity.textContent = formatValue(fromSI(data.maxVelocity, 'velocity'));
+  els.maxVelocityUnit.textContent = getUnitLabel('velocity');
+  els.meanVelocity.textContent = formatValue(fromSI(data.meanVelocity, 'velocity'));
+  els.meanVelocityUnit.textContent = getUnitLabel('velocity');
+  els.flowRate.textContent = formatValue(fromSI(data.flowRate, 'flowRate'));
+  els.flowRateUnit.textContent = getUnitLabel('flowRate');
+  els.wallStress.textContent = formatValue(fromSI(data.tauW, 'pressure'));
+  els.wallStressUnit.textContent = getUnitLabel('pressure');
+  els.pressureGradient.textContent = formatDisplay(params.G, 'pressureGradient');
   els.plasticityIndex.textContent = data.tau0 > 0 ? formatValue(data.Pl, 4) : '0';
-  els.plugRadius.textContent = data.tau0 > 0 ? `${formatValue(data.Rp * 1000, 2)} mm` : 'Não se aplica';
+  els.plugRadius.textContent = data.tau0 > 0 ? formatDisplay(data.Rp, 'length', 4) : 'Não se aplica';
   els.plugArea.textContent = data.tau0 > 0 ? `${formatValue(data.Pl * data.Pl * 100, 1)} %` : '0 %';
   els.wallShearRate.textContent = `${formatValue(data.wallShearRate, 3)} s⁻¹`;
-  els.pressureDifferenceOutput.textContent = `${formatValue(mode.pressureDifference ?? (params.G * params.tubeLength), 2)} Pa`;
+  els.pressureDifferenceOutput.textContent = formatDisplay(mode.pressureDifference ?? (params.G * params.tubeLength), 'pressure');
   els.reynoldsNumber.textContent = formatValue(re, 2);
   els.machNumber.textContent = formatValue(mach, 3);
-  els.legendMax.innerHTML = `<span class="math">U<sub>max</sub></span> = ${formatValue(data.maxVelocity)} m/s`;
+  els.legendMax.innerHTML = `<span class="math">U<sub>max</sub></span> = ${formatValue(fromSI(data.maxVelocity, 'velocity'))} ${getUnitLabel('velocity')}`;
 
   const flowing = data.flowing && data.maxVelocity > 0;
   const turbulent = re > 2100;
@@ -474,7 +586,7 @@ function drawProfileChart() {
   for (let i = 0; i <= 4; i += 1) {
     const y = margin.top + h * i / 4;
     ctx.beginPath(); ctx.moveTo(margin.left, y); ctx.lineTo(margin.left + w, y); ctx.stroke();
-    const v = result.maxVelocity * (1 - i / 4);
+    const v = fromSI(result.maxVelocity * (1 - i / 4), 'velocity');
     ctx.textAlign = 'right'; ctx.fillText(formatValue(v, 2), margin.left - 7, y + 3);
   }
   for (let i = 0; i <= 4; i += 1) {
@@ -485,8 +597,8 @@ function drawProfileChart() {
   ctx.fillStyle = css('--muted');
   ctx.textAlign = 'center';
   ctx.fillText('r / R', margin.left + w / 2, height - 8);
-  ctx.save(); ctx.translate(11, margin.top + h / 2); ctx.rotate(-Math.PI / 2); ctx.font = scaledFont(8, 'Manrope'); ctx.fillText('U (m/s)', 0, 0); ctx.restore();
-  ctx.save(); ctx.translate(width - 8, margin.top + h / 2); ctx.rotate(Math.PI / 2); ctx.fillStyle = css('--amber'); ctx.font = scaledFont(8, 'Manrope'); ctx.fillText('τ (Pa)', 0, 0); ctx.restore();
+  ctx.save(); ctx.translate(11, margin.top + h / 2); ctx.rotate(-Math.PI / 2); ctx.font = scaledFont(8, 'Manrope'); ctx.fillText(`U (${getUnitLabel('velocity')})`, 0, 0); ctx.restore();
+  ctx.save(); ctx.translate(width - 8, margin.top + h / 2); ctx.rotate(Math.PI / 2); ctx.fillStyle = css('--amber'); ctx.font = scaledFont(8, 'Manrope'); ctx.fillText(`τ (${getUnitLabel('pressure')})`, 0, 0); ctx.restore();
 
   const points = [];
   for (let i = result.samples.length - 1; i >= 0; i -= 2) points.push({ ...result.samples[i], signedX: -result.samples[i].x });
@@ -652,16 +764,21 @@ function exportCsv() {
 }
 
 function reset() {
+  units.pressure = 'Pa';
+  units.length = 'm';
+  units.flowRate = 'm3/d';
+  units.density = 'kg/m3';
+  updateUnitSelects();
   els.model.value = defaults.model;
   els.flowMode.value = defaults.flowMode;
   els.pressureSpecMode.value = defaults.pressureSpecMode;
-  els.radius.value = defaults.radius;
-  els.pressureGradientInput.value = defaults.pressureGradient;
-  els.pressureDifference.value = defaults.pressureDifference;
-  els.tubeLength.value = defaults.tubeLength;
-  els.flowRateInput.value = defaults.flowRate;
-  els.density.value = defaults.density;
-  els.soundSpeed.value = defaults.soundSpeed;
+  els.radius.value = fromSI(defaults.radius, 'length');
+  els.pressureGradientInput.value = fromSI(defaults.pressureGradient, 'pressureGradient');
+  els.pressureDifference.value = fromSI(defaults.pressureDifference, 'pressure');
+  els.tubeLength.value = fromSI(defaults.tubeLength, 'length');
+  els.flowRateInput.value = fromSI(defaults.flowRate, 'flowRate');
+  els.density.value = fromSI(defaults.density, 'density');
+  els.soundSpeed.value = fromSI(defaults.soundSpeed, 'velocity');
   els.viscosity.value = Math.log10(defaults.viscosity);
   els.viscosityNumber.value = defaults.viscosity;
   els.consistency.value = Math.log10(defaults.consistency);
@@ -683,7 +800,7 @@ function handleProfilePointer(event) {
   const index = Math.min(result.samples.length - 1, Math.round(Math.abs(signed) * (result.samples.length - 1)));
   const point = result.samples[index];
   hoveredIndex = Math.round(x * 200);
-  els.chartReadout.textContent = `r/R ${signed.toFixed(2)}  ·  U ${formatValue(point.velocity, 4)} m/s  ·  τ ${formatValue(point.stress, 3)} Pa  ·  γ̇ ${formatValue(point.shearRate, 3)} s⁻¹`;
+  els.chartReadout.textContent = `r/R ${signed.toFixed(2)}  ·  U ${formatValue(fromSI(point.velocity, 'velocity'), 4)} ${getUnitLabel('velocity')}  ·  τ ${formatValue(fromSI(point.stress, 'pressure'), 3)} ${getUnitLabel('pressure')}  ·  γ̇ ${formatValue(point.shearRate, 3)} s⁻¹`;
   drawProfileChart();
 }
 
@@ -717,6 +834,42 @@ function toggleA11yPopover(show) {
   els.accessibilityButton.setAttribute('aria-expanded', String(open));
 }
 
+function updateUnitSelects() {
+  $$('.unit-select').forEach((select) => {
+    const dimension = select.dataset.dimension;
+    if (dimension && units[dimension]) select.value = units[dimension];
+  });
+  if (els.pressureGradientUnitDenominator) els.pressureGradientUnitDenominator.textContent = `/${getUnitDef('length', units.length).label}`;
+  if (els.soundSpeedUnit) els.soundSpeedUnit.textContent = getUnitLabel('velocity');
+}
+
+function applyUnits() {
+  updateUnitSelects();
+  if (result) {
+    const p = result.params;
+    setInputValue(els.radius, fromSI(p.R, 'length'));
+    setInputValue(els.tubeLength, fromSI(p.tubeLength, 'length'));
+    setInputValue(els.density, fromSI(p.density, 'density'));
+    setInputValue(els.soundSpeed, fromSI(p.soundSpeed, 'velocity'));
+    setInputValue(els.pressureGradientInput, fromSI(p.G, 'pressureGradient'));
+    setInputValue(els.pressureDifference, fromSI(p.G * p.tubeLength, 'pressure'));
+    setInputValue(els.flowRateInput, fromSI(result.flowRate, 'flowRate'));
+  }
+  refresh();
+}
+
+function setupUnits() {
+  updateUnitSelects();
+  $$('.unit-select').forEach((select) => {
+    select.addEventListener('change', () => {
+      const dimension = select.dataset.dimension;
+      if (!dimension || !units[dimension]) return;
+      units[dimension] = select.value;
+      applyUnits();
+    });
+  });
+}
+
 function setupAccessibility() {
   setPanelVisibility();
   els.accessibilityButton.addEventListener('click', (e) => { e.stopPropagation(); toggleA11yPopover(); });
@@ -744,7 +897,7 @@ syncSliderAndNumber(els.consistencyNumber, els.consistency, true);
 syncSliderAndNumber(els.flowIndexNumber, els.flowIndex, false);
 syncSliderAndNumber(els.yieldStressNumber, els.yieldStress, false);
 
-$$('input, select').forEach((input) => input.addEventListener('input', refresh));
+$$('input, select:not(.unit-select)').forEach((input) => input.addEventListener('input', refresh));
 window.addEventListener('resize', () => { drawProfileChart(); drawFlow(); });
 els.profileCanvas.addEventListener('pointermove', handleProfilePointer);
 els.profileCanvas.addEventListener('pointerleave', () => { hoveredIndex = -1; els.chartReadout.textContent = 'Mova o cursor sobre o gráfico para inspecionar valores.'; drawProfileChart(); });
@@ -763,6 +916,7 @@ els.exportButton.addEventListener('click', exportCsv);
 
 resetParticles();
 reset();
+setupUnits();
 setupAccessibility();
 window.addEventListener('load', () => updateEquation(result));
 cancelAnimationFrame(animationFrame);
