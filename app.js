@@ -180,6 +180,7 @@ const els = {
   equation: $('#equation'),
   wallStressEquation: $('#wallStressEquation'),
   flowRateEquation: $('#flowRateEquation'),
+  reynoldsEquation: $('#reynoldsEquation'),
   equationVars: $('#equationVars'),
   equationTag: $('#equationTag'),
   legendMax: $('#legendMax'),
@@ -461,9 +462,10 @@ function updateMetrics(data, mode = {}) {
   const n = params.model === 'powerLaw' || params.model === 'herschelBulkley' ? params.n : 1;
   const K = params.model === 'newtonian' || params.model === 'bingham' ? params.mu : params.H;
   const tau0 = params.model === 'bingham' || params.model === 'herschelBulkley' ? params.tau0 : 0;
-  const gammaW = V > 0 ? ((3 * n + 1) / (4 * n)) * (8 * V / D) : 0;
-  const denom = tau0 + K * (gammaW ** n);
-  const re = V > 0 && denom > 0 ? (8 * params.density * V * V) / denom : 0;
+  const factor = n > 0 ? (3 * n + 1) / (4 * n) : 1;
+  const shearRateWall = V > 0 ? 8 * V / D : 0;
+  const denom = tau0 + K * (factor ** n) * (shearRateWall ** n);
+  const re = V > 0 && denom > 0 ? (8 * params.density * V * V * factor) / denom : 0;
   const mach = params.soundSpeed > 0 ? V / params.soundSpeed : 0;
 
   els.maxVelocity.textContent = formatValue(fromSI(data.maxVelocity, 'velocity'));
@@ -506,7 +508,7 @@ function updateMetrics(data, mode = {}) {
 
 function typesetEquations() {
   if (!window.MathJax || !window.MathJax.typesetPromise) return;
-  const nodes = [els.equation, els.wallStressEquation, els.flowRateEquation, els.equationVars];
+  const nodes = [els.equation, els.wallStressEquation, els.flowRateEquation, els.reynoldsEquation, els.equationVars];
   if (window.MathJax.typesetClear) window.MathJax.typesetClear(nodes);
   window.MathJax.typesetPromise(nodes).catch(() => {});
 }
@@ -533,6 +535,7 @@ function updateEquation(data) {
     els.flowRateEquation.textContent = String.raw`\[Q=\pi R^3\left(\frac{\tau_w}{H}\right)^{1/n}\left[\frac{(1-\mathrm{Pl})^{1/n+3}}{1/n+3}+\frac{2\mathrm{Pl}(1-\mathrm{Pl})^{1/n+2}}{1/n+2}+\frac{\mathrm{Pl}^2(1-\mathrm{Pl})^{1/n+1}}{1/n+1}\right]\]`;
     els.equationVars.textContent = String.raw`\(H=${formatValue(H, 4)}\ \mathrm{Pa\,s^n},\quad n=${formatValue(n, 2)},\quad \tau_0=${formatValue(data.tau0, 3)}\ \mathrm{Pa},\quad \mathrm{Pl}=${formatValue(data.Pl, 4)},\quad R_p=${formatValue(data.Rp, 5)}\ \mathrm{m},\quad Q=${formatValue(data.flowRate, 4)}\ \mathrm{m^3\,s^{-1}}\)`;
   }
+  els.reynoldsEquation.textContent = String.raw`\[\mathrm{Re}=\frac{8\rho V^2\left(\frac{3n+1}{4n}\right)}{\tau_0+K\left(\frac{3n+1}{4n}\right)^n\left(\frac{8V}{D}\right)^n}\]`;
   typesetEquations();
 }
 
