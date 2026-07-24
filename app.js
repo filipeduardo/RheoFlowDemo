@@ -172,6 +172,10 @@ const els = {
   pressureGradient: $('#pressureGradient'),
   pressureDifferenceOutput: $('#pressureDifferenceOutput'),
   reynoldsNumber: $('#reynoldsNumber'),
+  localGradient: $('#localGradient'),
+  reynoldsHbeNumber: $('#reynoldsHbeNumber'),
+  darcyFriction: $('#darcyFriction'),
+  darcyWeisbachPressure: $('#darcyWeisbachPressure'),
   machNumber: $('#machNumber'),
   plasticityIndex: $('#plasticityIndex'),
   plugRadius: $('#plugRadius'),
@@ -182,6 +186,10 @@ const els = {
   wallStressEquation: $('#wallStressEquation'),
   flowRateEquation: $('#flowRateEquation'),
   reynoldsEquation: $('#reynoldsEquation'),
+  localGradientEquation: $('#localGradientEquation'),
+  reynoldsHbeEquation: $('#reynoldsHbeEquation'),
+  darcyFrictionEquation: $('#darcyFrictionEquation'),
+  darcyWeisbachEquation: $('#darcyWeisbachEquation'),
   equationVars: $('#equationVars'),
   equationTag: $('#equationTag'),
   legendMax: $('#legendMax'),
@@ -356,6 +364,31 @@ function calculate(params) {
   return { params, G, tauW, tau0, flowing, Pl, Rp, samples, maxVelocity, meanVelocity, flowRate, wallShearRate };
 }
 
+// Darcy friction factor from Madlener et al. (2009): laminar f_D = 64/Re,
+// turbulent via the Dodge–Metzner (1959) correlation (converted from Fanning
+// to Darcy form) using the local flow-behavior index m. The implicit equation
+//   1/sqrt(f_D) = (2/m^0.75) * log10[ Re * (f_D/4)^(1 - m/2) ] - 0.2/m^1.2
+// is solved by fixed-point iteration on y = 1/sqrt(f_D). For m = 1 the
+// expression reduces to the Prandtl–Nikuradse smooth-pipe equation.
+function darcyFrictionFactor(re, m) {
+  if (!Number.isFinite(re) || re <= 0) return 0;
+  if (re <= 2100) return 64 / re;
+  const mClamped = Math.min(Math.max(m, 0.1), 1);
+  const a = 2 / Math.pow(mClamped, 0.75);
+  const b = 0.2 / Math.pow(mClamped, 1.2);
+  const log10Re = Math.log10(re);
+  const log10Four = Math.log10(4);
+  const oneMinusHalfM = 1 - mClamped / 2;
+  let y = Math.sqrt(re / 64);
+  for (let i = 0; i < 100; i += 1) {
+    const yNext = a * (log10Re - oneMinusHalfM * log10Four - 2 * oneMinusHalfM * Math.log10(y)) - b;
+    if (Number.isFinite(yNext) && Math.abs(yNext - y) < 1e-12) { y = yNext; break; }
+    y = Number.isFinite(yNext) && yNext > 0 ? yNext : y;
+  }
+  const f = 1 / (y * y);
+  return Number.isFinite(f) && f > 0 ? f : 0;
+}
+
 function formatValue(value, digits = 3) {
   if (!Number.isFinite(value)) return '—';
   const abs = Math.abs(value);
@@ -469,6 +502,20 @@ function updateMetrics(data, mode = {}) {
   const re = V > 0 && denom > 0 ? (8 * params.density * V * V * factor) / denom : 0;
   const mach = params.soundSpeed > 0 ? V / params.soundSpeed : 0;
 
+  // Madlener et al. (2009) HBE generalized Reynolds with eta_infinity = 0.
+  const gammaAppw = V > 0 ? 8 * V / D : 0;
+  const tauW = data.tauW;
+  const mLocal = (V > 0 && tauW > 0) ? (n * K * (gammaAppw ** n)) / tauW : (n > 0 ? n : 1);
+  const mClamped = Number.isFinite(mLocal) && mLocal > 0 ? mLocal : (n > 0 ? n : 1);
+  const mFactor = (3 * mClamped + 1) / (4 * mClamped);
+  let reHbe = 0;
+  if (V > 0 && D > 0) {
+    const denomHbe = (tau0 / 8) * ((D / V) ** n) + K * (mFactor ** n) * (8 ** (n - 1));
+    if (denomHbe > 0) reHbe = (params.density * (V ** (2 - n)) * (D ** n)) / denomHbe;
+  }
+  const fDarcy = darcyFrictionFactor(reHbe, mClamped);
+  const darcyWeisbachDp = (fDarcy > 0 && D > 0) ? fDarcy * (params.tubeLength / D) * (params.density * V * V / 2) : 0;
+
   els.maxVelocity.textContent = formatValue(fromSI(data.maxVelocity, 'velocity'));
   els.maxVelocityUnit.textContent = getUnitLabel('velocity');
   els.meanVelocity.textContent = formatValue(fromSI(data.meanVelocity, 'velocity'));
@@ -490,11 +537,15 @@ function updateMetrics(data, mode = {}) {
   els.wallShearRate.textContent = `${formatValue(data.wallShearRate, 3)} s⁻¹`;
   els.pressureDifferenceOutput.textContent = formatValue(fromSI(mode.pressureDifference ?? (params.G * params.tubeLength), 'pressure'), 3);
   els.reynoldsNumber.textContent = formatValue(re, 2);
+  els.localGradient.textContent = formatValue(mClamped, 4);
+  els.reynoldsHbeNumber.textContent = formatValue(reHbe, 2);
+  els.darcyFriction.textContent = formatValue(fDarcy, 5);
+  els.darcyWeisbachPressure.textContent = formatValue(fromSI(darcyWeisbachDp, 'pressure'), 3);
   els.machNumber.textContent = formatValue(mach, 3);
   els.legendMax.innerHTML = `<span class="math">U<sub>max</sub></span> = ${formatValue(fromSI(data.maxVelocity, 'velocity'))} ${getUnitLabel('velocity')}`;
 
   const flowing = data.flowing && data.maxVelocity > 0;
-  const turbulent = re > 2100;
+  const turbulent = reHbe > 2100;
   const supersonic = mach > 1;
   els.flowState.classList.toggle('stopped', !flowing);
   els.flowState.classList.toggle('turbulent', flowing && turbulent);
@@ -515,7 +566,7 @@ function updateMetrics(data, mode = {}) {
 
 function typesetEquations() {
   if (!window.MathJax || !window.MathJax.typesetPromise) return;
-  const nodes = [els.equation, els.wallStressEquation, els.flowRateEquation, els.reynoldsEquation, els.equationVars];
+  const nodes = [els.equation, els.wallStressEquation, els.flowRateEquation, els.reynoldsEquation, els.localGradientEquation, els.reynoldsHbeEquation, els.darcyFrictionEquation, els.darcyWeisbachEquation, els.equationVars];
   if (window.MathJax.typesetClear) window.MathJax.typesetClear(nodes);
   window.MathJax.typesetPromise(nodes).catch(() => {});
 }
@@ -543,6 +594,10 @@ function updateEquation(data) {
     els.equationVars.textContent = String.raw`\(H=${formatValue(H, 4)}\ \mathrm{Pa\,s^n},\quad n=${formatValue(n, 2)},\quad \tau_0=${formatValue(data.tau0, 3)}\ \mathrm{Pa},\quad \mathrm{Pl}=${formatValue(data.Pl, 4)},\quad R_p=${formatValue(data.Rp, 5)}\ \mathrm{m},\quad Q=${formatValue(data.flowRate, 4)}\ \mathrm{m^3\,s^{-1}}\)`;
   }
   els.reynoldsEquation.textContent = String.raw`\[\mathrm{Re}=\frac{8\rho V^2\left(\frac{3n+1}{4n}\right)}{\tau_0+K\left(\frac{3n+1}{4n}\right)^n\left(\frac{8V}{D}\right)^n}\]`;
+  els.localGradientEquation.textContent = String.raw`\[\dot{\gamma}_{\mathrm{appw}}=\frac{8\bar{u}}{D},\qquad m=\frac{nK\left(\frac{8\bar{u}}{D}\right)^n+\eta_\infty\left(\frac{8\bar{u}}{D}\right)}{\tau_0+K\left(\frac{8\bar{u}}{D}\right)^n+\eta_\infty\left(\frac{8\bar{u}}{D}\right)}\quad\Rightarrow\quad \eta_\infty=0:\ m=\frac{nK\left(\frac{8\bar{u}}{D}\right)^n}{\tau_0+K\left(\frac{8\bar{u}}{D}\right)^n}\]`;
+  els.reynoldsHbeEquation.textContent = String.raw`\[\mathrm{Re}_{\mathrm{gen\,HBE}}=\frac{\rho\bar{u}^{2-n}D^n}{\frac{\tau_0}{8}\left(\frac{D}{\bar{u}}\right)^n+K\left(\frac{3m+1}{4m}\right)^n8^{n-1}+\eta_\infty\left(\frac{3m+1}{4m}\right)\left(\frac{D}{\bar{u}}\right)^{n-1}}\quad(\eta_\infty=0)\]`;
+  els.darcyFrictionEquation.textContent = String.raw`\[f_{\mathrm{Darcy}}=\begin{cases}\displaystyle\frac{64}{\mathrm{Re}_{\mathrm{gen\,HBE}}},&\mathrm{Re}_{\mathrm{gen\,HBE}}\le 2100\quad(\text{laminar})\\[6pt]\displaystyle\frac{1}{\sqrt{f_{\mathrm{Darcy}}}}=\frac{2}{m^{0{,}75}}\log_{10}\!\left[\mathrm{Re}_{\mathrm{gen\,HBE}}\left(\frac{f_{\mathrm{Darcy}}}{4}\right)^{1-m/2}\right]-\frac{0{,}2}{m^{1{,}2}},&\mathrm{Re}_{\mathrm{gen\,HBE}}>2100\quad(\text{Dodge--Metzner})\end{cases}\]`;
+  els.darcyWeisbachEquation.textContent = String.raw`\[\Delta p_{\mathrm{DW}}=f_{\mathrm{Darcy}}\,\frac{L}{D}\,\frac{\rho\bar{u}^2}{2}\]`;
   typesetEquations();
 }
 

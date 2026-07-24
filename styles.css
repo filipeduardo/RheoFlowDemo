@@ -193,6 +193,10 @@ input[type='range']::-moz-range-thumb { width: 9px; height: 9px; border-radius: 
 .diagnostic-list .unit-denominator { color: var(--muted-2); font-family: var(--mono); font-size: calc(var(--font-scale, 1) * 9px); }
 .assumption-note { margin: 14px 2px 0; color: var(--muted-2); font-size: calc(var(--font-scale, 1) * 8px); text-align: center; }
 .equation-si-note { margin: -8px 18px 14px; color: var(--muted-2); font-size: calc(var(--font-scale, 1) * 8px); text-align: center; }
+.equation-citation { margin: -4px 18px 16px; padding: 10px 12px; color: var(--muted-2); background: var(--panel); border: 1px solid var(--border-soft); border-radius: 8px; font-size: calc(var(--font-scale, 1) * 8px); line-height: 1.55; text-align: left; }
+.equation-citation em { font-style: italic; color: var(--muted); }
+.equation-citation a { color: var(--cyan); text-decoration: none; }
+.equation-citation a:hover { text-decoration: underline; }
 
 .a11y-icon { opacity: .55; }
 .a11y-icon:hover, .a11y-icon[aria-expanded='true'] { opacity: 1; }
