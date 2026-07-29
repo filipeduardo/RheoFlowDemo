@@ -83,6 +83,17 @@
         </div>
 
         <section class="control-section">
+          <label class="field-label" for="ductMode">Modo do duto</label>
+          <div class="select-wrap">
+            <select id="ductMode">
+              <option value="homogeneous" selected>Homogêneo</option>
+              <option value="nonHomogeneous">Não homogêneo</option>
+            </select>
+            <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg>
+          </div>
+        </section>
+
+        <section class="control-section">
           <label class="field-label" for="modelSelect">Modelo reológico</label>
           <div class="select-wrap">
             <select id="modelSelect">
@@ -120,7 +131,7 @@
           </div>
 
           <div class="control-grid">
-            <label class="number-field">
+            <label class="number-field" id="radiusField">
               <span>Raio do duto <span class="math">R</span></span>
               <span class="input-row"><input id="radius" type="number" min="0.001" step="0.005" value="0.05"><select class="unit-select" data-dimension="length" aria-label="Unidade de comprimento"><option value="m" selected>m</option><option value="ft">ft</option><option value="in">in</option></select></span>
             </label>
@@ -136,7 +147,7 @@
               <span>Vazão volumétrica <span class="math">Q</span></span>
               <span class="input-row"><input id="flowRateInput" type="number" min="0" step="0.1" value="86.4"><select class="unit-select" data-dimension="flowRate" aria-label="Unidade de vazão"><option value="m3/d" selected>m³/d</option><option value="bbl/d">bbl/d</option><option value="MMSCFD">MMSCFD</option><option value="GPM">GPM</option></select></span>
             </label>
-            <label class="number-field">
+            <label class="number-field" id="tubeLengthField">
               <span>Comprimento do tubo <span class="math">L</span></span>
               <span class="input-row"><input id="tubeLength" type="number" min="0.001" step="0.1" value="0.5"><select class="unit-select" data-dimension="length" aria-label="Unidade de comprimento"><option value="m" selected>m</option><option value="ft">ft</option><option value="in">in</option></select></span>
             </label>
@@ -148,6 +159,36 @@
               <span>Velocidade do som <span class="math">c</span></span>
               <span class="input-row"><input id="soundSpeed" type="number" min="1" step="10" value="1500"><small id="soundSpeedUnit">m/s</small></span>
             </label>
+          </div>
+        </section>
+
+        <section class="control-section" id="nonHomogeneousGeometry" hidden>
+          <h2>Perfil axial do duto</h2>
+          <div class="geometry-header">
+            <label class="field-label" for="geometryInput">Pontos <span class="math">x</span> e <span class="math">r</span> (<span id="geometryUnitLabel">m</span>)</label>
+            <select class="unit-select" data-dimension="length" aria-label="Unidade de comprimento"><option value="m" selected>m</option><option value="ft">ft</option><option value="in">in</option></select>
+          </div>
+          <textarea id="geometryInput" rows="6" placeholder="0 0.05&#10;0.25 0.04&#10;0.5 0.03"></textarea>
+          <p class="model-description">Duas colunas: posição axial <span class="math">x</span> e raio <span class="math">r</span>. Apenas números, espaços, tabulações e quebras de linha.</p>
+          <div class="control-grid">
+            <label class="number-field">
+              <span>Tipo de perfil</span>
+              <div class="select-wrap" style="margin-top:6px;">
+                <select id="profileMode">
+                  <option value="linear" selected>Linear</option>
+                  <option value="cubic">Cúbico</option>
+                </select>
+                <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg>
+              </div>
+            </label>
+            <label class="number-field">
+              <span>Subdivisões <span class="math">N</span></span>
+              <span class="input-row"><input id="subdivisionsInput" type="number" min="2" step="1" value="20"></span>
+            </label>
+          </div>
+          <div class="nh-actions">
+            <button class="button primary" id="generateGeometryButton" type="button">Gerar geometria</button>
+            <button class="button primary" id="calculateDuctButton" type="button" disabled>Calcular</button>
           </div>
         </section>
 
@@ -198,15 +239,16 @@
       </aside>
 
       <section class="dashboard">
-        <div class="dashboard-head">
-          <div>
-            <span class="eyebrow">Resultado instantâneo</span>
-            <h2 id="resultTitle">Herschel–Bulkley em duto circular</h2>
+        <div id="homogeneousDashboard">
+          <div class="dashboard-head">
+            <div>
+              <span class="eyebrow">Resultado instantâneo</span>
+              <h2 id="resultTitle">Herschel–Bulkley em duto circular</h2>
+            </div>
+            <div class="flow-state" id="flowState"><span></span>Escoando</div>
           </div>
-          <div class="flow-state" id="flowState"><span></span>Escoando</div>
-        </div>
 
-        <div class="metric-grid">
+          <div class="metric-grid">
           <article class="metric-card accent-cyan">
             <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 12h16m-5-5 5 5-5 5"/></svg></div>
             <div><span>Velocidade máxima <span class="math">U<sub>max</sub></span></span><strong id="maxVelocity">—</strong><small id="maxVelocityUnit">m/s</small></div>
@@ -333,7 +375,89 @@
             </div>
           </article>
         </div>
-        <p class="assumption-note">Modelo ideal: escoamento incompressível, permanente, laminar, axisimétrico, completamente desenvolvido e sem deslizamento na parede.</p>
+          <p class="assumption-note">Modelo ideal: escoamento incompressível, permanente, laminar, axisimétrico, completamente desenvolvido e sem deslizamento na parede.</p>
+        </div>
+
+        <div id="nonHomogeneousDashboard" hidden>
+          <div class="dashboard-head">
+            <div>
+              <span class="eyebrow">Resultado não homogêneo</span>
+              <h2 id="nhResultTitle">Duto com perfil axial</h2>
+            </div>
+            <div class="flow-state" id="nhFlowState"><span></span>Aguardando cálculo</div>
+          </div>
+
+          <div class="metric-grid">
+            <article class="metric-card accent-cyan">
+              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 12h16m-5-5 5 5-5 5"/></svg></div>
+              <div><span>Δp total <span class="math">Δp</span></span><strong id="nhTotalPressure">—</strong><small id="nhTotalPressureUnit">Pa</small></div>
+            </article>
+            <article class="metric-card accent-blue">
+              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 18V6m5 12V9m5 9V4m5 14v-7"/></svg></div>
+              <div><span>Velocidade máxima <span class="math">U<sub>max</sub></span></span><strong id="nhMaxVelocity">—</strong><small id="nhMaxVelocityUnit">m/s</small></div>
+            </article>
+            <article class="metric-card accent-violet">
+              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M5 19c4-11 10-11 14 0M8 14h8"/></svg></div>
+              <div><span>Velocidade mínima <span class="math">U<sub>min</sub></span></span><strong id="nhMinVelocity">—</strong><small id="nhMinVelocityUnit">m/s</small></div>
+            </article>
+            <article class="metric-card accent-amber">
+              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M7 8l5-5 5 5M7 16l5 5 5-5"/></svg></div>
+              <div><span>Reynolds máximo <span class="math">Re</span></span><strong id="nhReMax">—</strong></div>
+            </article>
+            <article class="metric-card accent-cyan">
+              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M7 8l5-5 5 5M7 16l5 5 5-5"/></svg></div>
+              <div><span>Reynolds mediano <span class="math">Re<sub>med</sub></span></span><strong id="nhReMedian">—</strong></div>
+            </article>
+            <article class="metric-card accent-blue">
+              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M7 8l5-5 5 5M7 16l5 5 5-5"/></svg></div>
+              <div><span>Mach máximo <span class="math">Ma</span></span><strong id="nhMachMax">—</strong></div>
+            </article>
+            <article class="metric-card accent-violet">
+              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M7 8l5-5 5 5M7 16l5 5 5-5"/></svg></div>
+              <div><span>Mach mediano <span class="math">Ma<sub>med</sub></span></span><strong id="nhMachMedian">—</strong></div>
+            </article>
+            <article class="metric-card accent-amber">
+              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 12h16m-5-5 5 5-5 5"/></svg></div>
+              <div><span>Seções <span class="math">N</span></span><strong id="nhSectionCount">—</strong></div>
+            </article>
+          </div>
+
+          <div class="visual-grid">
+            <article class="card flow-card">
+              <div class="card-header">
+                <div><span class="card-kicker">Perfil axial</span><h3>Geometria do duto</h3></div>
+              </div>
+              <div class="canvas-wrap"><canvas id="ductProfileCanvas" role="img" aria-label="Perfil axial do duto"></canvas></div>
+              <div class="flow-legend"><span id="ductLegendMin">x = 0</span><div class="gradient-bar"></div><span id="ductLegendMax">x = L</span></div>
+            </article>
+            <article class="card profile-card">
+              <div class="card-header">
+                <div><span class="card-kicker">Vista longitudinal</span><h3>Escoamento com partículas</h3></div>
+                <div class="animation-controls">
+                  <button id="nhPauseButton" class="small-icon-button" type="button" aria-label="Pausar animação">
+                    <svg class="pause-icon" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg>
+                    <svg class="play-icon" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z"/></svg>
+                  </button>
+                  <span id="nhAnimationLabel">Animação ativa</span>
+                </div>
+              </div>
+              <div class="canvas-wrap flow-wrap"><canvas id="ductFlowCanvas" role="img" aria-label="Visualização animada do escoamento no duto não homogêneo"></canvas></div>
+            </article>
+          </div>
+
+          <details class="nh-details" id="nhDetails">
+            <summary>Seções individuais (resultados)</summary>
+            <div class="table-wrap">
+              <table class="nh-table">
+                <thead>
+                  <tr><th>x (início)</th><th>Δx</th><th>R</th><th>U<sub>max</sub></th><th>Re</th><th>Δp</th></tr>
+                </thead>
+                <tbody id="nhSectionTableBody"></tbody>
+              </table>
+            </div>
+          </details>
+          <p class="assumption-note">Duto não homogêneo: integração axial por subseções cilíndricas de raio constante.</p>
+        </div>
       </section>
     </main>
   </div>

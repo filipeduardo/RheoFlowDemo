@@ -209,7 +209,37 @@ const els = {
   accessibilityPopover: $('#accessibilityPopover'),
   showControls: $('#showControlsPanel'),
   showDashboard: $('#showDashboardPanel'),
-  workspace: $('.workspace')
+  workspace: $('.workspace'),
+  ductMode: $('#ductMode'),
+  nonHomogeneousGeometry: $('#nonHomogeneousGeometry'),
+  geometryInput: $('#geometryInput'),
+  geometryUnitLabel: $('#geometryUnitLabel'),
+  profileMode: $('#profileMode'),
+  subdivisionsInput: $('#subdivisionsInput'),
+  generateGeometryButton: $('#generateGeometryButton'),
+  calculateDuctButton: $('#calculateDuctButton'),
+  radiusField: $('#radiusField'),
+  tubeLengthField: $('#tubeLengthField'),
+  homogeneousDashboard: $('#homogeneousDashboard'),
+  nonHomogeneousDashboard: $('#nonHomogeneousDashboard'),
+  nhResultTitle: $('#nhResultTitle'),
+  nhFlowState: $('#nhFlowState'),
+  nhTotalPressure: $('#nhTotalPressure'),
+  nhTotalPressureUnit: $('#nhTotalPressureUnit'),
+  nhMaxVelocity: $('#nhMaxVelocity'),
+  nhMaxVelocityUnit: $('#nhMaxVelocityUnit'),
+  nhMinVelocity: $('#nhMinVelocity'),
+  nhMinVelocityUnit: $('#nhMinVelocityUnit'),
+  nhReMax: $('#nhReMax'),
+  nhReMedian: $('#nhReMedian'),
+  nhMachMax: $('#nhMachMax'),
+  nhMachMedian: $('#nhMachMedian'),
+  nhSectionCount: $('#nhSectionCount'),
+  ductProfileCanvas: $('#ductProfileCanvas'),
+  ductFlowCanvas: $('#ductFlowCanvas'),
+  nhPauseButton: $('#nhPauseButton'),
+  nhAnimationLabel: $('#nhAnimationLabel'),
+  nhSectionTableBody: $('#nhSectionTableBody')
 };
 
 let result = null;
@@ -220,6 +250,10 @@ let particles = [];
 let hoveredIndex = -1;
 let fontScale = 1;
 let lineWidthScale = 1;
+let nhGeometry = null;
+let nhPaused = false;
+let nhFlowTime = 0;
+let nhParticles = [];
 
 function readPositive(input, fallback) {
   const value = Number(input.value);
@@ -245,6 +279,432 @@ function readYieldStress() {
   const maxAttr = els.yieldStressNumber.max;
   const max = maxAttr === '' ? Infinity : Number(maxAttr);
   return Number.isFinite(max) ? Math.min(raw, max) : raw;
+}
+
+// Non-homogeneous duct helpers
+function sanitizeGeometryInput() {
+  const v = els.geometryInput.value.replace(/[^\d\s\.\-eE+\t\n\r]/g, '');
+  if (v !== els.geometryInput.value) els.geometryInput.value = v;
+}
+
+function parseGeometryInput() {
+  const raw = els.geometryInput.value.replace(/[^\d\s\.\-eE+]/g, '').trim();
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  if (tokens.length < 4 || tokens.length % 2 !== 0) return null;
+  const points = [];
+  for (let i = 0; i < tokens.length; i += 2) {
+    const x = Number(tokens[i]);
+    const r = Number(tokens[i + 1]);
+    if (!Number.isFinite(x) || !Number.isFinite(r) || r <= 0) return null;
+    points.push({ x: toSI(x, 'length'), r: toSI(r, 'length') });
+  }
+  points.sort((a, b) => a.x - b.x);
+  for (let i = 1; i < points.length; i += 1) {
+    if (points[i].x <= points[i - 1].x + 1e-12) return null;
+  }
+  return points;
+}
+
+function linearInterpolate(points, x) {
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (x <= first.x) return first.r;
+  if (x >= last.x) return last.r;
+  let i = 1;
+  while (i < points.length && points[i].x < x) i += 1;
+  const p0 = points[i - 1];
+  const p1 = points[i];
+  const t = (x - p0.x) / (p1.x - p0.x);
+  return p0.r + t * (p1.r - p0.r);
+}
+
+function buildCubicSpline(points) {
+  const n = points.length;
+  const h = new Array(n - 1);
+  for (let i = 0; i < n - 1; i += 1) h[i] = points[i + 1].x - points[i].x;
+  const alpha = new Array(n).fill(0);
+  for (let i = 1; i < n - 1; i += 1) {
+    alpha[i] = (3 / h[i]) * (points[i + 1].r - points[i].r) - (3 / h[i - 1]) * (points[i].r - points[i - 1].r);
+  }
+  const l = new Array(n).fill(1);
+  const mu = new Array(n).fill(0);
+  const z = new Array(n).fill(0);
+  for (let i = 1; i < n - 1; i += 1) {
+    l[i] = 2 * (points[i + 1].x - points[i - 1].x) - h[i - 1] * mu[i - 1];
+    mu[i] = h[i] / l[i];
+    z[i] = (alpha[i] - h[i - 1] * z[i - 1]) / l[i];
+  }
+  const c = new Array(n).fill(0);
+  const b = new Array(n - 1);
+  const d = new Array(n - 1);
+  for (let j = n - 2; j >= 0; j -= 1) {
+    c[j] = z[j] - mu[j] * c[j + 1];
+    b[j] = (points[j + 1].r - points[j].r) / h[j] - h[j] * (c[j + 1] + 2 * c[j]) / 3;
+    d[j] = (c[j + 1] - c[j]) / (3 * h[j]);
+  }
+  return { points, b, c, d };
+}
+
+function cubicInterpolate(points, x) {
+  if (points.length < 3) return linearInterpolate(points, x);
+  if (!points.cubicSpline) points.cubicSpline = buildCubicSpline(points);
+  const pts = points.cubicSpline.points;
+  if (x <= pts[0].x) return pts[0].r;
+  if (x >= pts[pts.length - 1].x) return pts[pts.length - 1].r;
+  let i = 1;
+  while (i < pts.length && pts[i].x < x) i += 1;
+  const j = i - 1;
+  const dx = x - pts[j].x;
+  const spline = points.cubicSpline;
+  return pts[j].r + spline.b[j] * dx + spline.c[j] * dx * dx + spline.d[j] * dx * dx * dx;
+}
+
+function radiusAt(points, x, mode) {
+  if (mode === 'cubic' && points.length >= 3) return Math.max(1e-6, cubicInterpolate(points, x));
+  return Math.max(1e-6, linearInterpolate(points, x));
+}
+
+function buildSubsections(points, subdivisions, mode) {
+  const n = Math.max(2, Math.min(1000, Math.floor(Number(subdivisions) || 20)));
+  const x0 = points[0].x;
+  const xN = points[points.length - 1].x;
+  const L = xN - x0;
+  const dx = L / n;
+  const subsections = [];
+  for (let i = 0; i < n; i += 1) {
+    const xLeft = x0 + i * dx;
+    const xRight = (i === n - 1) ? xN : x0 + (i + 1) * dx;
+    const xCenter = (xLeft + xRight) / 2;
+    const r = radiusAt(points, xCenter, mode);
+    subsections.push({ xLeft, xRight, xCenter, r, dx: xRight - xLeft });
+  }
+  return { n, subsections };
+}
+
+function getFlowSpec(baseParams, profileLength) {
+  const flowMode = els.flowMode.value;
+  const pressureSpecMode = els.pressureSpecMode.value;
+  if (flowMode === 'pressureGradient') {
+    if (pressureSpecMode === 'differential') {
+      const G = baseParams.pressureDifference / profileLength;
+      return { flowMode, pressureSpecMode, G };
+    }
+    return { flowMode, pressureSpecMode, G: baseParams.pressureGradient };
+  }
+  return { flowMode, pressureSpecMode, targetQ: baseParams.flowRate };
+}
+
+function getDiagnostics(data, params) {
+  const V = data.meanVelocity;
+  const D = 2 * params.R;
+  const n = params.model === 'powerLaw' || params.model === 'herschelBulkley' ? params.n : 1;
+  const K = params.model === 'newtonian' || params.model === 'bingham' ? params.mu : params.H;
+  const tau0 = params.model === 'bingham' || params.model === 'herschelBulkley' ? params.tau0 : 0;
+  const factor = n > 0 ? (3 * n + 1) / (4 * n) : 1;
+  const shearRateWall = V > 0 ? 8 * V / D : 0;
+  const denom = tau0 + K * (factor ** n) * (shearRateWall ** n);
+  const re = V > 0 && denom > 0 ? (8 * params.density * V * V * factor) / denom : 0;
+  const mach = params.soundSpeed > 0 ? V / params.soundSpeed : 0;
+  return { re, mach, V, maxV: data.maxVelocity };
+}
+
+function solveSection(baseParams, R, dx, flowSpec) {
+  const params = { ...baseParams, R: Math.max(1e-6, R), tubeLength: dx };
+  let G;
+  if (flowSpec.flowMode === 'flowRate') {
+    G = solveForG(flowSpec.targetQ, { ...params, G: defaults.pressureGradient });
+  } else {
+    G = flowSpec.G;
+  }
+  const data = calculate({ ...params, G });
+  const d = getDiagnostics(data, { ...params, G });
+  return { data, G, re: d.re, mach: d.mach, dp: G * dx, dx };
+}
+
+function median(values) {
+  const sorted = [...values].filter(Number.isFinite).sort((a, b) => a - b);
+  if (sorted.length === 0) return 0;
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) return (sorted[mid - 1] + sorted[mid]) / 2;
+  return sorted[mid];
+}
+
+function resetNHParticles(count = 90) {
+  nhParticles = Array.from({ length: count }, (_, i) => ({
+    t: Math.random(),
+    y: Math.random() * 2 - 1,
+    size: 0.7 + Math.random() * 1.5,
+    alpha: 0.25 + Math.random() * 0.65,
+    phase: i * 0.13
+  }));
+}
+
+function generateGeometry() {
+  sanitizeGeometryInput();
+  const points = parseGeometryInput();
+  if (!points || points.length < 2) {
+    els.geometryInput.classList.add('invalid');
+    nhGeometry = null;
+    els.calculateDuctButton.disabled = true;
+    return;
+  }
+  els.geometryInput.classList.remove('invalid');
+  const mode = els.profileMode.value;
+  const subdivisions = Math.max(2, Math.floor(Number(els.subdivisionsInput.value) || 20));
+  const { n, subsections } = buildSubsections(points, subdivisions, mode);
+  nhGeometry = { points, mode, subdivisions: n, subsections, calculated: false, sectionResults: null, segmentResults: null, totalPressure: 0 };
+  resetNHParticles();
+  drawDuctProfile();
+  drawDuctFlow();
+  els.calculateDuctButton.disabled = false;
+}
+
+function calculateNonHomogeneous() {
+  if (!nhGeometry) return;
+  const { points, mode, subsections } = nhGeometry;
+  const baseParams = getParameters();
+  const profileLength = points[points.length - 1].x - points[0].x;
+  if (profileLength <= 0) return;
+  const flowSpec = getFlowSpec(baseParams, profileLength);
+  const sectionResults = subsections.map((s) => solveSection(baseParams, s.r, s.dx, flowSpec));
+  const totalPressure = sectionResults.reduce((sum, sr) => sum + sr.dp, 0);
+  const segmentResults = [];
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const x = points[i].x;
+    const dx = points[i + 1].x - points[i].x;
+    const r = radiusAt(points, x + dx / 2, mode);
+    const sr = solveSection(baseParams, r, dx, flowSpec);
+    segmentResults.push({ x, dx, r: sr.data.params.R, maxV: sr.data.maxVelocity, re: sr.re, mach: sr.mach, dp: sr.dp });
+  }
+  const maxV = Math.max(...segmentResults.map((s) => s.maxV));
+  const minV = Math.min(...segmentResults.map((s) => s.maxV));
+  const reValues = segmentResults.map((s) => s.re);
+  const machValues = segmentResults.map((s) => s.mach);
+  nhGeometry = {
+    ...nhGeometry,
+    sectionResults,
+    segmentResults,
+    totalPressure,
+    maxV,
+    minV,
+    reMax: Math.max(...reValues),
+    reMedian: median(reValues),
+    machMax: Math.max(...machValues),
+    machMedian: median(machValues),
+    calculated: true,
+    globalMaxV: maxV,
+    baseParams,
+    flowSpec
+  };
+  console.table(segmentResults.map((s, i) => ({ section: i + 1, x: s.x, dx: s.dx, R: s.r, Umax: s.maxV, Re: s.re, Ma: s.mach, dp: s.dp })));
+  updateNonHomogeneousMetrics();
+  drawDuctProfile();
+  drawDuctFlow();
+}
+
+function updateNonHomogeneousMetrics() {
+  if (!nhGeometry) return;
+  const { totalPressure, maxV, minV, reMax, reMedian, machMax, machMedian, segmentResults, subsections } = nhGeometry;
+  els.nhTotalPressure.textContent = formatValue(fromSI(totalPressure, 'pressure'), 3);
+  els.nhTotalPressureUnit.textContent = getUnitLabel('pressure');
+  els.nhMaxVelocity.textContent = formatValue(fromSI(maxV, 'velocity'), 3);
+  els.nhMaxVelocityUnit.textContent = getUnitLabel('velocity');
+  els.nhMinVelocity.textContent = formatValue(fromSI(minV, 'velocity'), 3);
+  els.nhMinVelocityUnit.textContent = getUnitLabel('velocity');
+  els.nhReMax.textContent = formatValue(reMax, 2);
+  els.nhReMedian.textContent = formatValue(reMedian, 2);
+  els.nhMachMax.textContent = formatValue(machMax, 3);
+  els.nhMachMedian.textContent = formatValue(machMedian, 3);
+  els.nhSectionCount.textContent = String(subsections.length);
+  const anyFlowing = maxV > 0;
+  const turbulent = reMax > 2100;
+  const supersonic = machMax > 1;
+  els.nhFlowState.classList.remove('stopped', 'turbulent', 'supersonic');
+  if (!anyFlowing) {
+    els.nhFlowState.innerHTML = '<span></span>Sem escoamento';
+    els.nhFlowState.classList.add('stopped');
+  } else if (turbulent && supersonic) {
+    els.nhFlowState.innerHTML = '<span></span>Turbulento / Supersônico';
+    els.nhFlowState.classList.add('turbulent', 'supersonic');
+  } else if (turbulent) {
+    els.nhFlowState.innerHTML = '<span></span>Turbulento';
+    els.nhFlowState.classList.add('turbulent');
+  } else if (supersonic) {
+    els.nhFlowState.innerHTML = '<span></span>Supersônico';
+    els.nhFlowState.classList.add('supersonic');
+  } else {
+    els.nhFlowState.innerHTML = '<span></span>Escoando';
+  }
+  els.nhSectionTableBody.innerHTML = segmentResults.map((s) => `<tr><td>${formatValue(fromSI(s.x, 'length'), 3)}</td><td>${formatValue(fromSI(s.dx, 'length'), 3)}</td><td>${formatValue(fromSI(s.r, 'length'), 4)}</td><td>${formatValue(fromSI(s.maxV, 'velocity'), 3)}</td><td>${formatValue(s.re, 2)}</td><td>${formatValue(fromSI(s.dp, 'pressure'), 3)}</td></tr>`).join('');
+}
+
+function drawDuctProfile() {
+  if (!nhGeometry) return;
+  const { ctx, width, height } = setupCanvas(els.ductProfileCanvas);
+  const margin = { top: 18, right: 42, bottom: 42, left: 52 };
+  const w = width - margin.left - margin.right;
+  const h = height - margin.top - margin.bottom;
+  ctx.clearRect(0, 0, width, height);
+  const { points, subsections, mode } = nhGeometry;
+  const x0 = points[0].x;
+  const xN = points[points.length - 1].x;
+  const maxR = Math.max(...points.map((p) => p.r));
+  const xScale = w / (xN - x0);
+  const yScale = h / (maxR * 1.1);
+  const mapX = (x) => margin.left + (x - x0) * xScale;
+  const mapY = (r) => margin.top + h - r * yScale;
+  ctx.strokeStyle = css('--border-soft');
+  ctx.lineWidth = scaledLineWidth(1);
+  ctx.fillStyle = css('--muted-2');
+  ctx.font = scaledFont(8, 'DM Mono');
+  for (let i = 0; i <= 4; i += 1) {
+    const x = margin.left + w * i / 4;
+    ctx.beginPath(); ctx.moveTo(x, margin.top); ctx.lineTo(x, margin.top + h); ctx.stroke();
+    const xv = x0 + (xN - x0) * i / 4;
+    ctx.textAlign = 'center'; ctx.fillText(formatValue(fromSI(xv, 'length'), 2), x, margin.top + h + 17);
+  }
+  for (let i = 0; i <= 4; i += 1) {
+    const y = margin.top + h * i / 4;
+    ctx.beginPath(); ctx.moveTo(margin.left, y); ctx.lineTo(margin.left + w, y); ctx.stroke();
+    const rv = maxR * 1.1 * (1 - i / 4);
+    ctx.textAlign = 'right'; ctx.fillText(formatValue(fromSI(rv, 'length'), 3), margin.left - 7, y + 3);
+  }
+  ctx.textAlign = 'center'; ctx.fillText(`x (${getUnitLabel('length')})`, margin.left + w / 2, height - 8);
+  ctx.save(); ctx.translate(11, margin.top + h / 2); ctx.rotate(-Math.PI / 2); ctx.font = scaledFont(8, 'Manrope'); ctx.fillText(`r (${getUnitLabel('length')})`, 0, 0); ctx.restore();
+  const samples = 200;
+  ctx.beginPath();
+  for (let i = 0; i <= samples; i += 1) {
+    const x = x0 + (xN - x0) * i / samples;
+    const r = radiusAt(points, x, mode);
+    const px = mapX(x);
+    const py = mapY(r);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.strokeStyle = css('--cyan'); ctx.lineWidth = scaledLineWidth(2.2); ctx.stroke();
+  ctx.fillStyle = css('--cyan');
+  points.forEach((p) => {
+    const px = mapX(p.x);
+    const py = mapY(p.r);
+    ctx.beginPath(); ctx.arc(px, py, 3 * lineWidthScale, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.strokeStyle = 'rgba(255,255,255,.12)';
+  ctx.setLineDash([3 * lineWidthScale, 3 * lineWidthScale]);
+  ctx.lineWidth = scaledLineWidth(1);
+  subsections.forEach((s) => {
+    const x = mapX(s.xLeft);
+    ctx.beginPath(); ctx.moveTo(x, margin.top); ctx.lineTo(x, margin.top + h); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+}
+
+function drawDuctFlow(delta = 0) {
+  if (!nhGeometry) return;
+  const { ctx, width, height } = setupCanvas(els.ductFlowCanvas);
+  ctx.clearRect(0, 0, width, height);
+  const { points, subsections, sectionResults, calculated } = nhGeometry;
+  const x0 = points[0].x;
+  const xN = points[points.length - 1].x;
+  const maxR = Math.max(...points.map((p) => p.r));
+  const left = 28;
+  const right = width - 20;
+  const centerY = height / 2;
+  const pipeHeight = height * 0.7;
+  const yScale = pipeHeight / (2 * maxR);
+  const L = xN - x0;
+  if (L <= 0) return;
+  const mapX = (x) => left + (x - x0) / L * (right - left);
+  ctx.strokeStyle = css('--border'); ctx.lineWidth = scaledLineWidth(3);
+  ctx.beginPath();
+  for (let i = 0; i <= 200; i += 1) {
+    const x = x0 + L * i / 200;
+    const r = radiusAt(points, x, els.profileMode.value);
+    const px = mapX(x);
+    const py = centerY - r * yScale;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.beginPath();
+  for (let i = 0; i <= 200; i += 1) {
+    const x = x0 + L * i / 200;
+    const r = radiusAt(points, x, els.profileMode.value);
+    const px = mapX(x);
+    const py = centerY + r * yScale;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  const globalMaxV = calculated && nhGeometry.globalMaxV > 0 ? nhGeometry.globalMaxV : 1;
+  if (calculated) {
+    subsections.forEach((s, i) => {
+      const sr = sectionResults[i];
+      const vRatio = globalMaxV > 0 ? sr.data.maxVelocity / globalMaxV : 0;
+      const xLeft = mapX(s.xLeft);
+      const xRight = mapX(s.xRight);
+      const rPx = s.r * yScale;
+      const hue = 184 - vRatio * 12;
+      const light = 14 + vRatio * 31;
+      ctx.fillStyle = `hsla(${hue}, 72%, ${light}%, .74)`;
+      ctx.fillRect(xLeft, centerY - rPx, xRight - xLeft, rPx * 2);
+    });
+  } else {
+    ctx.fillStyle = 'rgba(38,224,197,.08)';
+    subsections.forEach((s) => {
+      const xLeft = mapX(s.xLeft); const xRight = mapX(s.xRight); const rPx = s.r * yScale;
+      ctx.fillRect(xLeft, centerY - rPx, xRight - xLeft, rPx * 2);
+    });
+  }
+  if (calculated && !nhPaused) {
+    const speedScale = 0.00008;
+    nhParticles.forEach((p) => {
+      const xActual = x0 + p.t * L;
+      const sIndex = Math.min(subsections.length - 1, Math.max(0, Math.floor((xActual - x0) / L * subsections.length)));
+      const sr = sectionResults[sIndex];
+      const localMaxV = sr ? sr.data.maxVelocity : 0;
+      const velocityRatio = globalMaxV > 0 ? localMaxV / globalMaxV : 0;
+      p.t = (p.t + delta * speedScale * (0.08 + velocityRatio)) % 1;
+    });
+  }
+  if (calculated) {
+    nhParticles.forEach((p) => {
+      const xActual = x0 + p.t * L;
+      const sIndex = Math.min(subsections.length - 1, Math.max(0, Math.floor((xActual - x0) / L * subsections.length)));
+      const sr = sectionResults[sIndex];
+      const r = sr ? sr.data.params.R : radiusAt(points, xActual, els.profileMode.value);
+      const localMaxV = sr ? sr.data.maxVelocity : 0;
+      const velocityRatio = nhGeometry.globalMaxV > 0 ? localMaxV / nhGeometry.globalMaxV : 0;
+      const px = mapX(xActual);
+      const py = centerY + p.y * r * yScale;
+      ctx.fillStyle = `rgba(218, 255, 250, ${p.alpha * (0.25 + velocityRatio * 0.75)})`;
+      ctx.beginPath(); ctx.arc(px, py, p.size, 0, Math.PI * 2); ctx.fill();
+      if (velocityRatio > 0.15) {
+        ctx.strokeStyle = `rgba(38, 224, 197, ${p.alpha * 0.32})`;
+        ctx.lineWidth = scaledLineWidth(1);
+        ctx.beginPath(); ctx.moveTo(px - 5 * velocityRatio, py); ctx.lineTo(px, py); ctx.stroke();
+      }
+    });
+  }
+  ctx.fillStyle = css('--muted'); ctx.font = scaledFont(8, 'Manrope'); ctx.textAlign = 'left'; ctx.fillText('ENTRADA', left, centerY - maxR * yScale - 12); ctx.textAlign = 'right'; ctx.fillText('SAÍDA', right, centerY - maxR * yScale - 12);
+  ctx.strokeStyle = css('--cyan'); ctx.lineWidth = scaledLineWidth(1.5);
+  ctx.beginPath(); ctx.moveTo(right - 28, centerY - maxR * yScale - 14); ctx.lineTo(right - 4, centerY - maxR * yScale - 14); ctx.lineTo(right - 10, centerY - maxR * yScale - 18); ctx.moveTo(right - 4, centerY - maxR * yScale - 14); ctx.lineTo(right - 10, centerY - maxR * yScale - 10); ctx.stroke();
+}
+
+function toggleDuctMode() {
+  const isNH = els.ductMode.value === 'nonHomogeneous';
+  els.radiusField.hidden = isNH;
+  els.tubeLengthField.hidden = isNH;
+  els.nonHomogeneousGeometry.hidden = !isNH;
+  els.homogeneousDashboard.hidden = isNH;
+  els.nonHomogeneousDashboard.hidden = !isNH;
+  els.geometryUnitLabel.textContent = getUnitLabel('length');
+  if (isNH) {
+    els.yieldStress.max = '1e12';
+    els.yieldStressNumber.max = '1e12';
+    if (els.yieldStressMax) els.yieldStressMax.textContent = '';
+    if (!nhGeometry) generateGeometry();
+    else { drawDuctProfile(); drawDuctFlow(); }
+  } else {
+    drawProfileChart();
+    drawFlow();
+  }
 }
 
 function getParameters() {
@@ -398,6 +858,9 @@ function formatValue(value, digits = 3) {
 
 function formatNumeric(value) {
   if (!Number.isFinite(value)) return '';
+  if (value === 0) return '0';
+  const abs = Math.abs(value);
+  if (abs < 1e-6) return String(value.toPrecision(6));
   return String(Number(value.toFixed(10)));
 }
 
@@ -465,7 +928,9 @@ function updateControls(params, mode = {}) {
   setInputValue(els.flowIndexNumber, params.n);
   els.flowIndex.value = String(Math.max(Number(els.flowIndex.min), Math.min(Number(els.flowIndex.max), params.n)));
   setInputValue(els.yieldStressNumber, params.tau0);
-  els.yieldStress.value = String(Math.max(Number(els.yieldStress.min), Math.min(Number(els.yieldStress.max), params.tau0)));
+  const yieldMin = Number(els.yieldStress.min);
+  const yieldMax = els.yieldStress.max === '' ? Infinity : Number(els.yieldStress.max);
+  els.yieldStress.value = String(Math.max(yieldMin, Math.min(yieldMax, params.tau0)));
   [els.viscosity, els.consistency, els.flowIndex, els.yieldStress].forEach(updateRange);
 
   els.viscosityOutput.textContent = `${formatValue(params.mu, 4)} Pa·s`;
@@ -478,14 +943,16 @@ function updateControls(params, mode = {}) {
   setInputValue(els.density, fromSI(params.density, 'density'));
   setInputValue(els.soundSpeed, fromSI(params.soundSpeed, 'velocity'));
 
-  const pressureDifference = mode.pressureDifference ?? (params.G * params.tubeLength);
-  if (flowMode === 'pressureGradient' && pressureSpecMode === 'differential') {
-    setInputValue(els.pressureGradientInput, fromSI(params.G, 'pressureGradient'));
-  } else {
-    setInputValue(els.pressureDifference, fromSI(pressureDifference, 'pressure'));
-  }
-  if (flowMode === 'flowRate') {
-    setInputValue(els.pressureGradientInput, fromSI(params.G, 'pressureGradient'));
+  if (els.ductMode.value !== 'nonHomogeneous') {
+    const pressureDifference = mode.pressureDifference ?? (params.G * params.tubeLength);
+    if (flowMode === 'pressureGradient' && pressureSpecMode === 'differential') {
+      setInputValue(els.pressureGradientInput, fromSI(params.G, 'pressureGradient'));
+    } else {
+      setInputValue(els.pressureDifference, fromSI(pressureDifference, 'pressure'));
+    }
+    if (flowMode === 'flowRate') {
+      setInputValue(els.pressureGradientInput, fromSI(params.G, 'pressureGradient'));
+    }
   }
 }
 
@@ -776,14 +1243,23 @@ function drawFlow(delta = 0) {
 function animate(timestamp) {
   const delta = Math.min(40, timestamp - animationTime || 16);
   animationTime = timestamp;
-  drawFlow(delta);
+  if (els.ductMode.value === 'nonHomogeneous') {
+    drawDuctFlow(delta);
+  } else {
+    drawFlow(delta);
+  }
   animationFrame = requestAnimationFrame(animate);
 }
 
 function refresh() {
-  let params = getParameters();
   const flowMode = els.flowMode.value;
   const pressureSpecMode = els.pressureSpecMode.value;
+  if (els.ductMode.value === 'nonHomogeneous') {
+    updateControls(getParameters(), { flowMode, pressureSpecMode });
+    if (nhGeometry) { drawDuctProfile(); drawDuctFlow(); }
+    return;
+  }
+  let params = getParameters();
 
   if (flowMode === 'pressureGradient') {
     if (pressureSpecMode === 'differential') {
@@ -812,8 +1288,15 @@ function refresh() {
   result = calculate(params);
   updateMetrics(result, { flowMode, pressureSpecMode, pressureDifference });
   updateEquation(result);
-  drawProfileChart();
-  drawFlow();
+  if (els.ductMode.value === 'nonHomogeneous') {
+    if (nhGeometry) {
+      drawDuctProfile();
+      drawDuctFlow();
+    }
+  } else {
+    drawProfileChart();
+    drawFlow();
+  }
 }
 
 function exportCsv() {
@@ -854,6 +1337,16 @@ function reset() {
   els.yieldStressNumber.value = defaults.yieldStress;
   [els.showVelocity, els.showStress, els.showPlug, els.showParticles].forEach((input) => { input.checked = true; });
   [els.viscosity, els.consistency, els.flowIndex, els.yieldStress].forEach(updateRange);
+  els.ductMode.value = 'homogeneous';
+  els.geometryInput.value = '';
+  els.geometryInput.classList.remove('invalid');
+  els.subdivisionsInput.value = 20;
+  els.profileMode.value = 'linear';
+  nhGeometry = null;
+  nhPaused = false;
+  els.nhPauseButton.classList.remove('paused');
+  els.nhAnimationLabel.textContent = 'Animação ativa';
+  toggleDuctMode();
   refresh();
 }
 
@@ -878,19 +1371,30 @@ function setPanelVisibility() {
   }
   els.workspace.classList.toggle('hide-controls', !els.showControls.checked);
   els.workspace.classList.toggle('hide-dashboard', !els.showDashboard.checked);
-  requestAnimationFrame(() => { drawProfileChart(); drawFlow(); });
+  requestAnimationFrame(() => {
+    if (els.ductMode.value === 'nonHomogeneous') { drawDuctProfile(); drawDuctFlow(); }
+    else { drawProfileChart(); drawFlow(); }
+  });
 }
 
 function setFontSize(value) {
   document.documentElement.dataset.fontSize = value;
   fontScale = value === 'default' ? 1 : value === 'large' ? 1.15 : 1.3;
-  drawProfileChart(); drawFlow();
+  if (els.ductMode.value === 'nonHomogeneous') {
+    drawDuctProfile(); drawDuctFlow();
+  } else {
+    drawProfileChart(); drawFlow();
+  }
 }
 
 function setLineWidth(value) {
   document.documentElement.dataset.lineWidth = value;
   lineWidthScale = value === 'default' ? 1 : value === 'thick' ? 1.5 : 2;
-  drawProfileChart(); drawFlow();
+  if (els.ductMode.value === 'nonHomogeneous') {
+    drawDuctProfile(); drawDuctFlow();
+  } else {
+    drawProfileChart(); drawFlow();
+  }
 }
 
 function toggleA11yPopover(show) {
@@ -906,19 +1410,42 @@ function updateUnitSelects() {
   });
   $$('.unit-denominator').forEach((el) => { el.textContent = `/${getUnitDef('length', units.length).label}`; });
   if (els.soundSpeedUnit) els.soundSpeedUnit.textContent = getUnitLabel('velocity');
+  if (els.geometryUnitLabel) els.geometryUnitLabel.textContent = getUnitLabel('length');
 }
 
-function applyUnits() {
+function applyUnits(oldUnits = {}) {
+  const newUnits = { pressure: units.pressure, length: units.length, flowRate: units.flowRate, density: units.density };
+  Object.assign(units, oldUnits);
+  const toSIInput = (input, dimension) => {
+    if (!input) return undefined;
+    const value = Number(input.value);
+    if (!Number.isFinite(value)) return undefined;
+    return toSI(value, dimension);
+  };
+  const si = {
+    radius: toSIInput(els.radius, 'length'),
+    tubeLength: toSIInput(els.tubeLength, 'length'),
+    density: toSIInput(els.density, 'density'),
+    soundSpeed: toSIInput(els.soundSpeed, 'velocity'),
+    pressureGradient: toSIInput(els.pressureGradientInput, 'pressureGradient'),
+    pressureDifference: toSIInput(els.pressureDifference, 'pressure'),
+    flowRate: toSIInput(els.flowRateInput, 'flowRate')
+  };
+  Object.assign(units, newUnits);
   updateUnitSelects();
-  if (result) {
-    const p = result.params;
-    setInputValue(els.radius, fromSI(p.R, 'length'));
-    setInputValue(els.tubeLength, fromSI(p.tubeLength, 'length'));
-    setInputValue(els.density, fromSI(p.density, 'density'));
-    setInputValue(els.soundSpeed, fromSI(p.soundSpeed, 'velocity'));
-    setInputValue(els.pressureGradientInput, fromSI(p.G, 'pressureGradient'));
-    setInputValue(els.pressureDifference, fromSI(p.G * p.tubeLength, 'pressure'));
-    setInputValue(els.flowRateInput, fromSI(result.flowRate, 'flowRate'));
+  if (si.radius !== undefined) setInputValue(els.radius, fromSI(si.radius, 'length'));
+  if (si.tubeLength !== undefined) setInputValue(els.tubeLength, fromSI(si.tubeLength, 'length'));
+  if (si.density !== undefined) setInputValue(els.density, fromSI(si.density, 'density'));
+  if (si.soundSpeed !== undefined) setInputValue(els.soundSpeed, fromSI(si.soundSpeed, 'velocity'));
+  if (si.pressureGradient !== undefined) setInputValue(els.pressureGradientInput, fromSI(si.pressureGradient, 'pressureGradient'));
+  if (si.pressureDifference !== undefined) setInputValue(els.pressureDifference, fromSI(si.pressureDifference, 'pressure'));
+  if (si.flowRate !== undefined) setInputValue(els.flowRateInput, fromSI(si.flowRate, 'flowRate'));
+
+  if (els.ductMode.value === 'nonHomogeneous' && nhGeometry) {
+    const lines = nhGeometry.points.map((p) => `${formatNumeric(fromSI(p.x, 'length'))} ${formatNumeric(fromSI(p.r, 'length'))}`);
+    els.geometryInput.value = lines.join('\n');
+    generateGeometry();
+    if (nhGeometry) calculateNonHomogeneous();
   }
   refresh();
 }
@@ -929,8 +1456,9 @@ function setupUnits() {
     select.addEventListener('change', () => {
       const dimension = select.dataset.dimension;
       if (!dimension || !units[dimension]) return;
+      const oldUnits = { pressure: units.pressure, length: units.length, flowRate: units.flowRate, density: units.density };
       units[dimension] = select.value;
-      applyUnits();
+      applyUnits(oldUnits);
     });
   });
 }
@@ -963,7 +1491,10 @@ syncSliderAndNumber(els.flowIndexNumber, els.flowIndex, false);
 syncSliderAndNumber(els.yieldStressNumber, els.yieldStress, false);
 
 $$('input, select:not(.unit-select)').forEach((input) => input.addEventListener('input', refresh));
-window.addEventListener('resize', () => { drawProfileChart(); drawFlow(); });
+window.addEventListener('resize', () => {
+  if (els.ductMode.value === 'nonHomogeneous') { drawDuctProfile(); drawDuctFlow(); }
+  else { drawProfileChart(); drawFlow(); }
+});
 els.profileCanvas.addEventListener('pointermove', handleProfilePointer);
 els.profileCanvas.addEventListener('pointerleave', () => { hoveredIndex = -1; els.chartReadout.textContent = 'Mova o cursor sobre o gráfico para inspecionar valores.'; drawProfileChart(); });
 els.pauseButton.addEventListener('click', () => {
@@ -974,10 +1505,27 @@ els.pauseButton.addEventListener('click', () => {
 els.themeButton.addEventListener('click', () => {
   const root = document.documentElement;
   root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light';
-  drawProfileChart(); drawFlow();
+  if (els.ductMode.value === 'nonHomogeneous') { drawDuctProfile(); drawDuctFlow(); }
+  else { drawProfileChart(); drawFlow(); }
 });
 els.resetButton.addEventListener('click', reset);
 els.exportButton.addEventListener('click', exportCsv);
+els.ductMode.addEventListener('change', toggleDuctMode);
+els.generateGeometryButton.addEventListener('click', generateGeometry);
+els.calculateDuctButton.addEventListener('click', calculateNonHomogeneous);
+els.geometryInput.addEventListener('input', () => {
+  sanitizeGeometryInput();
+  els.geometryInput.classList.remove('invalid');
+});
+els.profileMode.addEventListener('change', () => { if (els.ductMode.value === 'nonHomogeneous') generateGeometry(); });
+els.subdivisionsInput.addEventListener('input', () => { if (els.ductMode.value === 'nonHomogeneous') generateGeometry(); });
+els.flowMode.addEventListener('change', refresh);
+els.pressureSpecMode.addEventListener('change', refresh);
+els.nhPauseButton.addEventListener('click', () => {
+  nhPaused = !nhPaused;
+  els.nhPauseButton.classList.toggle('paused', nhPaused);
+  els.nhAnimationLabel.textContent = nhPaused ? 'Animação pausada' : 'Animação ativa';
+});
 
 resetParticles();
 reset();
