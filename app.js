@@ -641,11 +641,11 @@ function drawDuctFlow(delta = 0) {
     if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
   }
   ctx.stroke();
-  const globalMaxV = calculated && nhGeometry.globalMaxV > 0 ? nhGeometry.globalMaxV : 1;
+  const globalMeanV = calculated ? sectionResults.reduce((m, sr) => Math.max(m, sr.data.meanVelocity), 0) || 1 : 1;
   if (calculated) {
     subsections.forEach((s, i) => {
       const sr = sectionResults[i];
-      const vRatio = globalMaxV > 0 ? sr.data.maxVelocity / globalMaxV : 0;
+      const vRatio = sr.data.meanVelocity / globalMeanV;
       const xLeft = mapX(s.xLeft);
       const xRight = mapX(s.xRight);
       const rPx = s.r * yScale;
@@ -684,8 +684,8 @@ function drawDuctFlow(delta = 0) {
       const xActual = x0 + p.t * L;
       const sIndex = subsectionIndexAt(xActual);
       const sr = sectionResults[sIndex];
-      const localMaxV = sr ? sr.data.maxVelocity : 0;
-      const velocityRatio = globalMaxV > 0 ? localMaxV / globalMaxV : 0;
+      const localMeanV = sr ? sr.data.meanVelocity : 0;
+      const velocityRatio = localMeanV / globalMeanV;
       p.t = (p.t + delta * speedScale * (0.08 + velocityRatio)) % 1;
     });
   }
@@ -695,8 +695,8 @@ function drawDuctFlow(delta = 0) {
       const sIndex = subsectionIndexAt(xActual);
       const sr = sectionResults[sIndex];
       const r = sr ? sr.data.params.R : radiusAt(points, xActual, els.profileMode.value);
-      const localMaxV = sr ? sr.data.maxVelocity : 0;
-      const velocityRatio = nhGeometry.globalMaxV > 0 ? localMaxV / nhGeometry.globalMaxV : 0;
+      const localMeanV = sr ? sr.data.meanVelocity : 0;
+      const velocityRatio = localMeanV / globalMeanV;
       const px = mapX(xActual);
       const py = centerY + p.y * r * yScale;
       ctx.fillStyle = `rgba(218, 255, 250, ${p.alpha * (0.25 + velocityRatio * 0.75)})`;
