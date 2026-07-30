@@ -387,19 +387,6 @@ function buildSubsections(points, subdivisions, mode) {
   return { n: subsections.length, subdivisionsPerSegment: nPer, subsections };
 }
 
-function getFlowSpec(baseParams, profileLength) {
-  const flowMode = els.flowMode.value;
-  const pressureSpecMode = els.pressureSpecMode.value;
-  if (flowMode === 'pressureGradient') {
-    if (pressureSpecMode === 'differential') {
-      const G = baseParams.pressureDifference / profileLength;
-      return { flowMode, pressureSpecMode, G };
-    }
-    return { flowMode, pressureSpecMode, G: baseParams.pressureGradient };
-  }
-  return { flowMode, pressureSpecMode, targetQ: baseParams.flowRate };
-}
-
 function getDiagnostics(data, params) {
   const V = data.meanVelocity;
   const D = 2 * params.R;
@@ -466,15 +453,42 @@ function generateGeometry() {
   els.calculateDuctButton.disabled = false;
 }
 
+function verifyNHResults(sectionResults, targetQ, targetP, flowMode) {
+  if (!sectionResults || sectionResults.length === 0) return;
+  const qValues = sectionResults.map((sr) => sr.data.flowRate);
+  const maxQError = targetQ > 0 ? Math.max(...qValues.map((q) => Math.abs(q - targetQ) / Math.abs(targetQ))) : 0;
+  const computedP = sectionResults.reduce((sum, sr) => sum + sr.dp, 0);
+  const pError = targetP > 0 ? Math.abs(computedP - targetP) / targetP : 0;
+  console.log('[RheoFlow NH verify] flowMode:', flowMode, 'target Q:', targetQ, 'max section Q error:', maxQError, 'computed Δp:', computedP, 'target Δp:', targetP, 'relative Δp error:', pError);
+  if (targetQ === 0) {
+    console.log('[RheoFlow NH verify] no flow (target pressure below yield threshold)');
+  } else if (maxQError > 1e-3 || pError > 1e-2) {
+    console.warn('[RheoFlow NH verify] mismatch detected', { maxQError, pError, sectionCount: sectionResults.length });
+  } else {
+    console.log('[RheoFlow NH verify] OK');
+  }
+}
+
 function calculateNonHomogeneous() {
   if (!nhGeometry) return;
   const { points, mode, subsections } = nhGeometry;
   const baseParams = getParameters();
   const profileLength = points[points.length - 1].x - points[0].x;
   if (profileLength <= 0) return;
-  const flowSpec = getFlowSpec(baseParams, profileLength);
+  const pressureSpecMode = els.pressureSpecMode.value;
+  const flowMode = els.flowMode.value;
+  let targetQ;
+  let targetP = 0;
+  if (flowMode === 'flowRate') {
+    targetQ = baseParams.flowRate;
+  } else {
+    targetP = pressureSpecMode === 'differential' ? baseParams.pressureDifference : baseParams.pressureGradient * profileLength;
+    targetQ = solveGlobalQ(targetP, baseParams, subsections);
+  }
+  const flowSpec = { flowMode: 'flowRate', targetQ };
   const sectionResults = subsections.map((s) => solveSection(baseParams, s.r, s.dx, flowSpec));
   const totalPressure = sectionResults.reduce((sum, sr) => sum + sr.dp, 0);
+  verifyNHResults(sectionResults, targetQ, flowMode === 'pressureGradient' ? targetP : totalPressure, flowMode);
   const segmentResults = [];
   for (let i = 0; i < points.length - 1; i += 1) {
     const x = points[i].x;
@@ -756,14 +770,32 @@ function flowRateAtG(G, params) {
   return calculate({ ...params, G }).flowRate;
 }
 
-function solveForG(targetQ, params) {
+function estimateGForQ(targetQ, params) {
+  const R = params.R;
+  const tau0 = params.model === 'bingham' || params.model === 'herschelBulkley' ? params.tau0 : 0;
+  const thresholdG = tau0 > 0 ? (2 * tau0) / R : 0;
+  if (targetQ <= 0) return thresholdG;
+  const n = Math.max(0.2, Number(params.n) || 1);
+  const K = params.model === 'newtonian' || params.model === 'bingham' ? params.mu : params.H;
+  let flowG = 0;
+  if (params.model === 'newtonian' || params.model === 'bingham') {
+    flowG = (8 * K * targetQ) / (Math.PI * R ** 4);
+  } else if (params.model === 'powerLaw' || params.model === 'herschelBulkley') {
+    const exponent = (3 * n + 1) / n;
+    flowG = 2 * K * ((targetQ * (3 * n + 1)) / (Math.PI * n * R ** exponent)) ** n;
+  }
+  return thresholdG + flowG;
+}
+
+function solveForG(targetQ, params, tolerance = 1e-6) {
   if (!Number.isFinite(targetQ) || targetQ <= 0) return 0;
   const hasYield = params.model === 'bingham' || params.model === 'herschelBulkley';
   const minG = hasYield && params.tau0 > 0 ? (2 * params.tau0) / params.R : 0;
   if (flowRateAtG(minG, params) >= targetQ) return minG;
 
   let lo = minG;
-  let hi = Math.max(minG + 1, Number(params.G) || defaults.pressureGradient);
+  const hint = Number(params.G) || defaults.pressureGradient;
+  let hi = Math.max(minG + 1, estimateGForQ(targetQ, params), hint);
   for (let safety = 0; safety < 30; safety += 1) {
     const qHi = flowRateAtG(hi, params);
     if (qHi >= targetQ || hi > 1e12) break;
@@ -775,9 +807,81 @@ function solveForG(targetQ, params) {
     const qMid = flowRateAtG(mid, params);
     if (qMid < targetQ) lo = mid;
     else hi = mid;
-    if (hi - lo < 1e-6 * hi) break;
+    if (hi - lo < tolerance * hi) break;
   }
   return (lo + hi) / 2;
+}
+
+function thresholdPressure(baseParams, subsections) {
+  const tau0 = baseParams.model === 'bingham' || baseParams.model === 'herschelBulkley' ? baseParams.tau0 : 0;
+  if (!tau0) return 0;
+  return subsections.reduce((sum, s) => sum + (2 * tau0 / s.r) * s.dx, 0);
+}
+
+function estimateFlowRateForPressure(targetP, baseParams, subsections) {
+  if (targetP <= 0) return 0;
+  const tau0 = baseParams.model === 'bingham' || baseParams.model === 'herschelBulkley' ? baseParams.tau0 : 0;
+  const thresholdP = tau0 > 0 ? subsections.reduce((sum, s) => sum + (2 * tau0 / s.r) * s.dx, 0) : 0;
+  if (targetP <= thresholdP) return 0;
+  const n = Math.max(0.2, Number(baseParams.n) || 1);
+  const K = baseParams.model === 'newtonian' || baseParams.model === 'bingham' ? baseParams.mu : baseParams.H;
+  const effectiveP = Math.max(0, targetP - thresholdP);
+  if (baseParams.model === 'newtonian' || baseParams.model === 'bingham') {
+    const denom = (8 * K / Math.PI) * subsections.reduce((sum, s) => sum + s.dx / (s.r ** 4), 0);
+    return denom > 0 ? effectiveP / denom : 0;
+  }
+  const exponent = 3 * n + 1;
+  const sum = subsections.reduce((sum, s) => sum + s.dx / (s.r ** exponent), 0);
+  if (sum <= 0) return 0;
+  return (Math.PI * n / (3 * n + 1)) * Math.pow(effectiveP / (2 * K * sum), 1 / n);
+}
+
+function totalPressureForQ(Q, baseParams, subsections, tolerance = 1e-3) {
+  let total = 0;
+  for (let i = 0; i < subsections.length; i += 1) {
+    const s = subsections[i];
+    const G = solveForG(Q, { ...baseParams, R: s.r, tubeLength: s.dx, G: baseParams.pressureGradient }, tolerance);
+    total += G * s.dx;
+  }
+  return total;
+}
+
+function solveGlobalQ(targetP, baseParams, subsections) {
+  if (!Number.isFinite(targetP) || targetP <= 0 || subsections.length === 0) return 0;
+  const thresholdP = thresholdPressure(baseParams, subsections);
+  if (targetP <= thresholdP) return 0;
+  const Qest = estimateFlowRateForPressure(targetP, baseParams, subsections);
+  let lo = 0;
+  let pLo = thresholdP;
+  let hi = Math.max(Qest * 2, 1e-12);
+  let pHi = totalPressureForQ(hi, baseParams, subsections, 1e-3);
+  for (let safety = 0; safety < 30; safety += 1) {
+    if (pHi >= targetP || !Number.isFinite(pHi) || hi > 1e12) break;
+    hi *= 2;
+    pHi = totalPressureForQ(hi, baseParams, subsections, 1e-3);
+  }
+  if (!Number.isFinite(pHi) || pHi < targetP) return hi;
+  let fLo = pLo - targetP;
+  let fHi = pHi - targetP;
+  let Q = hi;
+  for (let i = 0; i < 40; i += 1) {
+    const newQ = hi - fHi * (hi - lo) / (fHi - fLo);
+    const newP = totalPressureForQ(newQ, baseParams, subsections, 1e-3);
+    const newF = newP - targetP;
+    Q = newQ;
+    if (Math.abs(newF) < 1e-4 * Math.max(1, targetP) || Math.abs(hi - lo) < 1e-7 * hi) break;
+    if (newF * fHi < 0) {
+      lo = hi;
+      fLo = fHi;
+      hi = newQ;
+      fHi = newF;
+    } else {
+      hi = newQ;
+      fHi = newF;
+      fLo *= 0.5;
+    }
+  }
+  return Q;
 }
 
 function calculate(params) {
