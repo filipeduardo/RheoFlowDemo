@@ -365,20 +365,26 @@ function radiusAt(points, x, mode) {
 }
 
 function buildSubsections(points, subdivisions, mode) {
-  const n = Math.max(2, Math.min(1000, Math.floor(Number(subdivisions) || 20)));
-  const x0 = points[0].x;
-  const xN = points[points.length - 1].x;
-  const L = xN - x0;
-  const dx = L / n;
-  const subsections = [];
-  for (let i = 0; i < n; i += 1) {
-    const xLeft = x0 + i * dx;
-    const xRight = (i === n - 1) ? xN : x0 + (i + 1) * dx;
-    const xCenter = (xLeft + xRight) / 2;
-    const r = radiusAt(points, xCenter, mode);
-    subsections.push({ xLeft, xRight, xCenter, r, dx: xRight - xLeft });
+  let nPer = Math.max(1, Math.min(1000, Math.floor(Number(subdivisions) || 20)));
+  const maxTotal = 10000;
+  const nTotal = (points.length - 1) * nPer;
+  if (nTotal > maxTotal) {
+    nPer = Math.max(1, Math.floor(maxTotal / (points.length - 1)));
   }
-  return { n, subsections };
+  const subsections = [];
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const x0 = points[i].x;
+    const x1 = points[i + 1].x;
+    const dx = (x1 - x0) / nPer;
+    for (let k = 0; k < nPer; k += 1) {
+      const xLeft = x0 + k * dx;
+      const xRight = (k === nPer - 1) ? x1 : x0 + (k + 1) * dx;
+      const xCenter = (xLeft + xRight) / 2;
+      const r = radiusAt(points, xCenter, mode);
+      subsections.push({ xLeft, xRight, xCenter, r, dx: xRight - xLeft, segmentIndex: i });
+    }
+  }
+  return { n: subsections.length, subdivisionsPerSegment: nPer, subsections };
 }
 
 function getFlowSpec(baseParams, profileLength) {
@@ -450,9 +456,10 @@ function generateGeometry() {
   }
   els.geometryInput.classList.remove('invalid');
   const mode = els.profileMode.value;
-  const subdivisions = Math.max(2, Math.floor(Number(els.subdivisionsInput.value) || 20));
-  const { n, subsections } = buildSubsections(points, subdivisions, mode);
-  nhGeometry = { points, mode, subdivisions: n, subsections, calculated: false, sectionResults: null, segmentResults: null, totalPressure: 0 };
+  const subdivisions = Math.max(1, Math.floor(Number(els.subdivisionsInput.value) || 20));
+  const { n, subdivisionsPerSegment, subsections } = buildSubsections(points, subdivisions, mode);
+  if (subdivisionsPerSegment !== subdivisions) els.subdivisionsInput.value = subdivisionsPerSegment;
+  nhGeometry = { points, mode, subdivisions: n, subdivisionsPerSegment, subsections, calculated: false, sectionResults: null, segmentResults: null, totalPressure: 0 };
   resetNHParticles();
   drawDuctProfile();
   drawDuctFlow();
@@ -472,14 +479,16 @@ function calculateNonHomogeneous() {
   for (let i = 0; i < points.length - 1; i += 1) {
     const x = points[i].x;
     const dx = points[i + 1].x - points[i].x;
-    const r = radiusAt(points, x + dx / 2, mode);
-    const sr = solveSection(baseParams, r, dx, flowSpec);
-    segmentResults.push({ x, dx, r: sr.data.params.R, maxV: sr.data.maxVelocity, re: sr.re, mach: sr.mach, dp: sr.dp });
+    const segmentSubs = sectionResults.filter((sr, idx) => subsections[idx].segmentIndex === i);
+    const centerIdx = Math.floor(segmentSubs.length / 2);
+    const centerSr = segmentSubs[centerIdx] || segmentSubs[0];
+    const dpSum = segmentSubs.reduce((sum, sr) => sum + sr.dp, 0);
+    if (centerSr) segmentResults.push({ x, dx, r: centerSr.data.params.R, maxV: centerSr.data.maxVelocity, re: centerSr.re, mach: centerSr.mach, dp: dpSum });
   }
-  const maxV = Math.max(...segmentResults.map((s) => s.maxV));
-  const minV = Math.min(...segmentResults.map((s) => s.maxV));
-  const reValues = segmentResults.map((s) => s.re);
-  const machValues = segmentResults.map((s) => s.mach);
+  const maxV = Math.max(...sectionResults.map((s) => s.data.maxVelocity));
+  const minV = Math.min(...sectionResults.map((s) => s.data.maxVelocity));
+  const reValues = sectionResults.map((s) => s.re);
+  const machValues = sectionResults.map((s) => s.mach);
   nhGeometry = {
     ...nhGeometry,
     sectionResults,
@@ -652,11 +661,28 @@ function drawDuctFlow(delta = 0) {
       ctx.fillRect(xLeft, centerY - rPx, xRight - xLeft, rPx * 2);
     });
   }
+  function subsectionIndexAt(x) {
+    if (x <= x0) return 0;
+    if (x >= xN) return subsections.length - 1;
+    let lo = 0;
+    let hi = subsections.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      if (x < subsections[mid].xLeft) {
+        hi = mid - 1;
+      } else if (x >= subsections[mid].xRight) {
+        lo = mid + 1;
+      } else {
+        return mid;
+      }
+    }
+    return subsections.length - 1;
+  }
   if (calculated && !nhPaused) {
     const speedScale = 0.00008;
     nhParticles.forEach((p) => {
       const xActual = x0 + p.t * L;
-      const sIndex = Math.min(subsections.length - 1, Math.max(0, Math.floor((xActual - x0) / L * subsections.length)));
+      const sIndex = subsectionIndexAt(xActual);
       const sr = sectionResults[sIndex];
       const localMaxV = sr ? sr.data.maxVelocity : 0;
       const velocityRatio = globalMaxV > 0 ? localMaxV / globalMaxV : 0;
@@ -666,7 +692,7 @@ function drawDuctFlow(delta = 0) {
   if (calculated) {
     nhParticles.forEach((p) => {
       const xActual = x0 + p.t * L;
-      const sIndex = Math.min(subsections.length - 1, Math.max(0, Math.floor((xActual - x0) / L * subsections.length)));
+      const sIndex = subsectionIndexAt(xActual);
       const sr = sectionResults[sIndex];
       const r = sr ? sr.data.params.R : radiusAt(points, xActual, els.profileMode.value);
       const localMaxV = sr ? sr.data.maxVelocity : 0;
