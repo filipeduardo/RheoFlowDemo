@@ -237,6 +237,11 @@ const els = {
   nhSectionCount: $('#nhSectionCount'),
   ductProfileCanvas: $('#ductProfileCanvas'),
   ductFlowCanvas: $('#ductFlowCanvas'),
+  nhProfileWrap: $('#nhProfileWrap'),
+  nhFlowWrap: $('#nhFlowWrap'),
+  nhVisualKicker: $('#nhVisualKicker'),
+  nhVisualTitle: $('#nhVisualTitle'),
+  nhFlowControls: $('#nhFlowControls'),
   nhPauseButton: $('#nhPauseButton'),
   nhAnimationLabel: $('#nhAnimationLabel'),
   nhSectionTableBody: $('#nhSectionTableBody')
@@ -254,6 +259,7 @@ let nhGeometry = null;
 let nhPaused = false;
 let nhFlowTime = 0;
 let nhParticles = [];
+let nhView = 'profile';
 
 function readPositive(input, fallback) {
   const value = Number(input.value);
@@ -432,13 +438,56 @@ function resetNHParticles(count = 90) {
   }));
 }
 
+function markGeometryDirty() {
+  if (nhGeometry) {
+    nhGeometry.geometryDirty = true;
+    nhGeometry.resultsDirty = true;
+    nhGeometry.calculated = false;
+  }
+  updateNHButtons();
+}
+
+function markResultsDirty() {
+  if (nhGeometry) {
+    nhGeometry.resultsDirty = true;
+  }
+  updateNHButtons();
+}
+
+function updateNHButtons() {
+  const geometryDirty = !nhGeometry || nhGeometry.geometryDirty;
+  const resultsDirty = !nhGeometry || !nhGeometry.calculated || nhGeometry.resultsDirty;
+  els.generateGeometryButton.textContent = geometryDirty ? 'Gerar geometria' : 'Geometria';
+  els.calculateDuctButton.disabled = geometryDirty;
+  els.calculateDuctButton.textContent = resultsDirty ? 'Calcular' : 'Escoamento';
+}
+
+function showNHVisual(view) {
+  nhView = view;
+  if (view === 'flow') {
+    els.nhProfileWrap.hidden = true;
+    els.nhFlowWrap.hidden = false;
+    els.nhFlowControls.hidden = false;
+    els.nhVisualKicker.textContent = 'Vista longitudinal';
+    els.nhVisualTitle.textContent = 'Escoamento com partículas';
+    drawDuctFlow(0);
+  } else {
+    els.nhProfileWrap.hidden = false;
+    els.nhFlowWrap.hidden = true;
+    els.nhFlowControls.hidden = true;
+    els.nhVisualKicker.textContent = 'Perfil axial';
+    els.nhVisualTitle.textContent = 'Geometria do duto';
+    drawDuctProfile();
+  }
+}
+
 function generateGeometry() {
   sanitizeGeometryInput();
   const points = parseGeometryInput();
   if (!points || points.length < 2) {
     els.geometryInput.classList.add('invalid');
     nhGeometry = null;
-    els.calculateDuctButton.disabled = true;
+    updateNHButtons();
     return;
   }
   els.geometryInput.classList.remove('invalid');
@@ -446,11 +495,10 @@ function generateGeometry() {
   const subdivisions = Math.max(1, Math.floor(Number(els.subdivisionsInput.value) || 20));
   const { n, subdivisionsPerSegment, subsections } = buildSubsections(points, subdivisions, mode);
   if (subdivisionsPerSegment !== subdivisions) els.subdivisionsInput.value = subdivisionsPerSegment;
-  nhGeometry = { points, mode, subdivisions: n, subdivisionsPerSegment, subsections, calculated: false, sectionResults: null, segmentResults: null, totalPressure: 0 };
+  nhGeometry = { points, mode, subdivisions: n, subdivisionsPerSegment, subsections, calculated: false, sectionResults: null, segmentResults: null, totalPressure: 0, geometryDirty: false, resultsDirty: true };
   resetNHParticles();
-  drawDuctProfile();
-  drawDuctFlow();
-  els.calculateDuctButton.disabled = false;
+  showNHVisual('profile');
+  updateNHButtons();
 }
 
 function verifyNHResults(sectionResults, targetQ, targetP, flowMode) {
@@ -515,14 +563,16 @@ function calculateNonHomogeneous() {
     machMax: Math.max(...machValues),
     machMedian: median(machValues),
     calculated: true,
+    geometryDirty: false,
+    resultsDirty: false,
     globalMaxV: maxV,
     baseParams,
     flowSpec
   };
   console.table(segmentResults.map((s, i) => ({ section: i + 1, x: s.x, dx: s.dx, R: s.r, Umax: s.maxV, Re: s.re, Ma: s.mach, dp: s.dp })));
   updateNonHomogeneousMetrics();
-  drawDuctProfile();
-  drawDuctFlow();
+  showNHVisual('flow');
+  updateNHButtons();
 }
 
 function updateNonHomogeneousMetrics() {
@@ -740,7 +790,7 @@ function toggleDuctMode() {
     els.yieldStressNumber.max = '1e12';
     if (els.yieldStressMax) els.yieldStressMax.textContent = '';
     if (!nhGeometry) generateGeometry();
-    else { drawDuctProfile(); drawDuctFlow(); }
+    else { showNHVisual(nhView || 'profile'); }
   } else {
     drawProfileChart();
     drawFlow();
@@ -1024,11 +1074,13 @@ function syncSliderAndNumber(numberInput, slider, isLog) {
     } else {
       slider.value = String(Math.max(min, Math.min(max, v)));
     }
+    markResultsDirty();
   });
   slider.addEventListener('input', () => {
     const v = Number(slider.value);
     if (!Number.isFinite(v)) return;
     numberInput.value = String(isLog ? 10 ** v : v);
+    markResultsDirty();
   });
 }
 
@@ -1386,7 +1438,7 @@ function refresh() {
   const pressureSpecMode = els.pressureSpecMode.value;
   if (els.ductMode.value === 'nonHomogeneous') {
     updateControls(getParameters(), { flowMode, pressureSpecMode });
-    if (nhGeometry) { drawDuctProfile(); drawDuctFlow(); }
+    if (nhGeometry) showNHVisual(nhView || 'profile');
     return;
   }
   let params = getParameters();
@@ -1641,16 +1693,28 @@ els.themeButton.addEventListener('click', () => {
 els.resetButton.addEventListener('click', reset);
 els.exportButton.addEventListener('click', exportCsv);
 els.ductMode.addEventListener('change', toggleDuctMode);
-els.generateGeometryButton.addEventListener('click', generateGeometry);
-els.calculateDuctButton.addEventListener('click', calculateNonHomogeneous);
+els.generateGeometryButton.addEventListener('click', () => {
+  if (nhGeometry && !nhGeometry.geometryDirty) showNHVisual('profile');
+  else generateGeometry();
+});
+els.calculateDuctButton.addEventListener('click', () => {
+  if (!nhGeometry || nhGeometry.geometryDirty) return;
+  if (!nhGeometry.calculated || nhGeometry.resultsDirty) calculateNonHomogeneous();
+  else showNHVisual('flow');
+});
 els.geometryInput.addEventListener('input', () => {
   sanitizeGeometryInput();
   els.geometryInput.classList.remove('invalid');
+  if (els.ductMode.value === 'nonHomogeneous') markGeometryDirty();
 });
 els.profileMode.addEventListener('change', () => { if (els.ductMode.value === 'nonHomogeneous') generateGeometry(); });
 els.subdivisionsInput.addEventListener('input', () => { if (els.ductMode.value === 'nonHomogeneous') generateGeometry(); });
-els.flowMode.addEventListener('change', refresh);
-els.pressureSpecMode.addEventListener('change', refresh);
+els.flowMode.addEventListener('change', () => { if (els.ductMode.value === 'nonHomogeneous') markResultsDirty(); refresh(); });
+els.pressureSpecMode.addEventListener('change', () => { if (els.ductMode.value === 'nonHomogeneous') markResultsDirty(); refresh(); });
+els.model.addEventListener('change', markResultsDirty);
+[els.density, els.soundSpeed, els.flowRateInput, els.pressureGradientInput, els.pressureDifference, els.radius, els.tubeLength].forEach((input) => {
+  input.addEventListener('input', markResultsDirty);
+});
 els.nhPauseButton.addEventListener('click', () => {
   nhPaused = !nhPaused;
   els.nhPauseButton.classList.toggle('paused', nhPaused);

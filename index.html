@@ -422,18 +422,11 @@
             </article>
           </div>
 
-          <div class="visual-grid">
-            <article class="card flow-card">
+          <div class="nh-visual-grid">
+            <article class="card nh-visual-card">
               <div class="card-header">
-                <div><span class="card-kicker">Perfil axial</span><h3>Geometria do duto</h3></div>
-              </div>
-              <div class="canvas-wrap"><canvas id="ductProfileCanvas" role="img" aria-label="Perfil axial do duto"></canvas></div>
-              <div class="flow-legend"><span id="ductLegendMin">x = 0</span><div class="gradient-bar"></div><span id="ductLegendMax">x = L</span></div>
-            </article>
-            <article class="card profile-card">
-              <div class="card-header">
-                <div><span class="card-kicker">Vista longitudinal</span><h3>Escoamento com partículas</h3></div>
-                <div class="animation-controls">
+                <div><span class="card-kicker" id="nhVisualKicker">Perfil axial</span><h3 id="nhVisualTitle">Geometria do duto</h3></div>
+                <div class="animation-controls" id="nhFlowControls" hidden>
                   <button id="nhPauseButton" class="small-icon-button" type="button" aria-label="Pausar animação">
                     <svg class="pause-icon" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg>
                     <svg class="play-icon" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z"/></svg>
@@ -441,7 +434,15 @@
                   <span id="nhAnimationLabel">Animação ativa</span>
                 </div>
               </div>
-              <div class="canvas-wrap flow-wrap"><canvas id="ductFlowCanvas" role="img" aria-label="Visualização animada do escoamento no duto não homogêneo"></canvas></div>
+              <div class="nh-canvas-stack">
+                <div class="canvas-wrap nh-profile-wrap" id="nhProfileWrap">
+                  <canvas id="ductProfileCanvas" role="img" aria-label="Perfil axial do duto"></canvas>
+                  <div class="flow-legend"><span id="ductLegendMin">x = 0</span><div class="gradient-bar"></div><span id="ductLegendMax">x = L</span></div>
+                </div>
+                <div class="canvas-wrap flow-wrap nh-flow-wrap" id="nhFlowWrap" hidden>
+                  <canvas id="ductFlowCanvas" role="img" aria-label="Visualização animada do escoamento no duto não homogêneo"></canvas>
+                </div>
+              </div>
             </article>
           </div>
 
