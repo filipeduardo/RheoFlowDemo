@@ -237,6 +237,11 @@ const els = {
   nhSectionCount: $('#nhSectionCount'),
   ductProfileCanvas: $('#ductProfileCanvas'),
   ductFlowCanvas: $('#ductFlowCanvas'),
+  nhProfileWrap: $('#nhProfileWrap'),
+  nhFlowWrap: $('#nhFlowWrap'),
+  nhVisualKicker: $('#nhVisualKicker'),
+  nhVisualTitle: $('#nhVisualTitle'),
+  nhFlowControls: $('#nhFlowControls'),
   nhPauseButton: $('#nhPauseButton'),
   nhAnimationLabel: $('#nhAnimationLabel'),
   nhSectionTableBody: $('#nhSectionTableBody')
@@ -254,6 +259,7 @@ let nhGeometry = null;
 let nhPaused = false;
 let nhFlowTime = 0;
 let nhParticles = [];
+let nhView = 'profile';
 
 function readPositive(input, fallback) {
   const value = Number(input.value);
@@ -365,33 +371,26 @@ function radiusAt(points, x, mode) {
 }
 
 function buildSubsections(points, subdivisions, mode) {
-  const n = Math.max(2, Math.min(1000, Math.floor(Number(subdivisions) || 20)));
-  const x0 = points[0].x;
-  const xN = points[points.length - 1].x;
-  const L = xN - x0;
-  const dx = L / n;
+  let nPer = Math.max(1, Math.min(1000, Math.floor(Number(subdivisions) || 20)));
+  const maxTotal = 10000;
+  const nTotal = (points.length - 1) * nPer;
+  if (nTotal > maxTotal) {
+    nPer = Math.max(1, Math.floor(maxTotal / (points.length - 1)));
+  }
   const subsections = [];
-  for (let i = 0; i < n; i += 1) {
-    const xLeft = x0 + i * dx;
-    const xRight = (i === n - 1) ? xN : x0 + (i + 1) * dx;
-    const xCenter = (xLeft + xRight) / 2;
-    const r = radiusAt(points, xCenter, mode);
-    subsections.push({ xLeft, xRight, xCenter, r, dx: xRight - xLeft });
-  }
-  return { n, subsections };
-}
-
-function getFlowSpec(baseParams, profileLength) {
-  const flowMode = els.flowMode.value;
-  const pressureSpecMode = els.pressureSpecMode.value;
-  if (flowMode === 'pressureGradient') {
-    if (pressureSpecMode === 'differential') {
-      const G = baseParams.pressureDifference / profileLength;
-      return { flowMode, pressureSpecMode, G };
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const x0 = points[i].x;
+    const x1 = points[i + 1].x;
+    const dx = (x1 - x0) / nPer;
+    for (let k = 0; k < nPer; k += 1) {
+      const xLeft = x0 + k * dx;
+      const xRight = (k === nPer - 1) ? x1 : x0 + (k + 1) * dx;
+      const xCenter = (xLeft + xRight) / 2;
+      const r = radiusAt(points, xCenter, mode);
+      subsections.push({ xLeft, xRight, xCenter, r, dx: xRight - xLeft, segmentIndex: i });
     }
-    return { flowMode, pressureSpecMode, G: baseParams.pressureGradient };
   }
-  return { flowMode, pressureSpecMode, targetQ: baseParams.flowRate };
+  return { n: subsections.length, subdivisionsPerSegment: nPer, subsections };
 }
 
 function getDiagnostics(data, params) {
@@ -439,24 +438,83 @@ function resetNHParticles(count = 90) {
   }));
 }
 
+function markGeometryDirty() {
+  if (nhGeometry) {
+    nhGeometry.geometryDirty = true;
+    nhGeometry.resultsDirty = true;
+    nhGeometry.calculated = false;
+  }
+  updateNHButtons();
+}
+
+function markResultsDirty() {
+  if (nhGeometry) {
+    nhGeometry.resultsDirty = true;
+  }
+  updateNHButtons();
+}
+
+function updateNHButtons() {
+  const geometryDirty = !nhGeometry || nhGeometry.geometryDirty;
+  const resultsDirty = !nhGeometry || !nhGeometry.calculated || nhGeometry.resultsDirty;
+  els.generateGeometryButton.textContent = geometryDirty ? 'Gerar geometria' : 'Geometria';
+  els.calculateDuctButton.disabled = geometryDirty;
+  els.calculateDuctButton.textContent = resultsDirty ? 'Calcular' : 'Escoamento';
+}
+
+function showNHVisual(view) {
+  nhView = view;
+  if (view === 'flow') {
+    els.nhProfileWrap.hidden = true;
+    els.nhFlowWrap.hidden = false;
+    els.nhFlowControls.hidden = false;
+    els.nhVisualKicker.textContent = 'Vista longitudinal';
+    els.nhVisualTitle.textContent = 'Escoamento com partículas';
+    drawDuctFlow(0);
+  } else {
+    els.nhProfileWrap.hidden = false;
+    els.nhFlowWrap.hidden = true;
+    els.nhFlowControls.hidden = true;
+    els.nhVisualKicker.textContent = 'Perfil axial';
+    els.nhVisualTitle.textContent = 'Geometria do duto';
+    drawDuctProfile();
+  }
+}
+
 function generateGeometry() {
   sanitizeGeometryInput();
   const points = parseGeometryInput();
   if (!points || points.length < 2) {
     els.geometryInput.classList.add('invalid');
     nhGeometry = null;
-    els.calculateDuctButton.disabled = true;
+    updateNHButtons();
     return;
   }
   els.geometryInput.classList.remove('invalid');
   const mode = els.profileMode.value;
-  const subdivisions = Math.max(2, Math.floor(Number(els.subdivisionsInput.value) || 20));
-  const { n, subsections } = buildSubsections(points, subdivisions, mode);
-  nhGeometry = { points, mode, subdivisions: n, subsections, calculated: false, sectionResults: null, segmentResults: null, totalPressure: 0 };
+  const subdivisions = Math.max(1, Math.floor(Number(els.subdivisionsInput.value) || 20));
+  const { n, subdivisionsPerSegment, subsections } = buildSubsections(points, subdivisions, mode);
+  if (subdivisionsPerSegment !== subdivisions) els.subdivisionsInput.value = subdivisionsPerSegment;
+  nhGeometry = { points, mode, subdivisions: n, subdivisionsPerSegment, subsections, calculated: false, sectionResults: null, segmentResults: null, totalPressure: 0, geometryDirty: false, resultsDirty: true };
   resetNHParticles();
-  drawDuctProfile();
-  drawDuctFlow();
-  els.calculateDuctButton.disabled = false;
+  showNHVisual('profile');
+  updateNHButtons();
+}
+
+function verifyNHResults(sectionResults, targetQ, targetP, flowMode) {
+  if (!sectionResults || sectionResults.length === 0) return;
+  const qValues = sectionResults.map((sr) => sr.data.flowRate);
+  const maxQError = targetQ > 0 ? Math.max(...qValues.map((q) => Math.abs(q - targetQ) / Math.abs(targetQ))) : 0;
+  const computedP = sectionResults.reduce((sum, sr) => sum + sr.dp, 0);
+  const pError = targetP > 0 ? Math.abs(computedP - targetP) / targetP : 0;
+  console.log('[RheoFlow NH verify] flowMode:', flowMode, 'target Q:', targetQ, 'max section Q error:', maxQError, 'computed Δp:', computedP, 'target Δp:', targetP, 'relative Δp error:', pError);
+  if (targetQ === 0) {
+    console.log('[RheoFlow NH verify] no flow (target pressure below yield threshold)');
+  } else if (maxQError > 1e-3 || pError > 1e-2) {
+    console.warn('[RheoFlow NH verify] mismatch detected', { maxQError, pError, sectionCount: sectionResults.length });
+  } else {
+    console.log('[RheoFlow NH verify] OK');
+  }
 }
 
 function calculateNonHomogeneous() {
@@ -465,21 +523,34 @@ function calculateNonHomogeneous() {
   const baseParams = getParameters();
   const profileLength = points[points.length - 1].x - points[0].x;
   if (profileLength <= 0) return;
-  const flowSpec = getFlowSpec(baseParams, profileLength);
+  const pressureSpecMode = els.pressureSpecMode.value;
+  const flowMode = els.flowMode.value;
+  let targetQ;
+  let targetP = 0;
+  if (flowMode === 'flowRate') {
+    targetQ = baseParams.flowRate;
+  } else {
+    targetP = pressureSpecMode === 'differential' ? baseParams.pressureDifference : baseParams.pressureGradient * profileLength;
+    targetQ = solveGlobalQ(targetP, baseParams, subsections);
+  }
+  const flowSpec = { flowMode: 'flowRate', targetQ };
   const sectionResults = subsections.map((s) => solveSection(baseParams, s.r, s.dx, flowSpec));
   const totalPressure = sectionResults.reduce((sum, sr) => sum + sr.dp, 0);
+  verifyNHResults(sectionResults, targetQ, flowMode === 'pressureGradient' ? targetP : totalPressure, flowMode);
   const segmentResults = [];
   for (let i = 0; i < points.length - 1; i += 1) {
     const x = points[i].x;
     const dx = points[i + 1].x - points[i].x;
-    const r = radiusAt(points, x + dx / 2, mode);
-    const sr = solveSection(baseParams, r, dx, flowSpec);
-    segmentResults.push({ x, dx, r: sr.data.params.R, maxV: sr.data.maxVelocity, re: sr.re, mach: sr.mach, dp: sr.dp });
+    const segmentSubs = sectionResults.filter((sr, idx) => subsections[idx].segmentIndex === i);
+    const centerIdx = Math.floor(segmentSubs.length / 2);
+    const centerSr = segmentSubs[centerIdx] || segmentSubs[0];
+    const dpSum = segmentSubs.reduce((sum, sr) => sum + sr.dp, 0);
+    if (centerSr) segmentResults.push({ x, dx, r: centerSr.data.params.R, maxV: centerSr.data.maxVelocity, re: centerSr.re, mach: centerSr.mach, dp: dpSum });
   }
-  const maxV = Math.max(...segmentResults.map((s) => s.maxV));
-  const minV = Math.min(...segmentResults.map((s) => s.maxV));
-  const reValues = segmentResults.map((s) => s.re);
-  const machValues = segmentResults.map((s) => s.mach);
+  const maxV = Math.max(...sectionResults.map((s) => s.data.maxVelocity));
+  const minV = Math.min(...sectionResults.map((s) => s.data.maxVelocity));
+  const reValues = sectionResults.map((s) => s.re);
+  const machValues = sectionResults.map((s) => s.mach);
   nhGeometry = {
     ...nhGeometry,
     sectionResults,
@@ -492,14 +563,16 @@ function calculateNonHomogeneous() {
     machMax: Math.max(...machValues),
     machMedian: median(machValues),
     calculated: true,
+    geometryDirty: false,
+    resultsDirty: false,
     globalMaxV: maxV,
     baseParams,
     flowSpec
   };
   console.table(segmentResults.map((s, i) => ({ section: i + 1, x: s.x, dx: s.dx, R: s.r, Umax: s.maxV, Re: s.re, Ma: s.mach, dp: s.dp })));
   updateNonHomogeneousMetrics();
-  drawDuctProfile();
-  drawDuctFlow();
+  showNHVisual('flow');
+  updateNHButtons();
 }
 
 function updateNonHomogeneousMetrics() {
@@ -632,11 +705,11 @@ function drawDuctFlow(delta = 0) {
     if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
   }
   ctx.stroke();
-  const globalMaxV = calculated && nhGeometry.globalMaxV > 0 ? nhGeometry.globalMaxV : 1;
+  const globalMeanV = calculated ? sectionResults.reduce((m, sr) => Math.max(m, sr.data.meanVelocity), 0) || 1 : 1;
   if (calculated) {
     subsections.forEach((s, i) => {
       const sr = sectionResults[i];
-      const vRatio = globalMaxV > 0 ? sr.data.maxVelocity / globalMaxV : 0;
+      const vRatio = sr.data.meanVelocity / globalMeanV;
       const xLeft = mapX(s.xLeft);
       const xRight = mapX(s.xRight);
       const rPx = s.r * yScale;
@@ -652,25 +725,42 @@ function drawDuctFlow(delta = 0) {
       ctx.fillRect(xLeft, centerY - rPx, xRight - xLeft, rPx * 2);
     });
   }
+  function subsectionIndexAt(x) {
+    if (x <= x0) return 0;
+    if (x >= xN) return subsections.length - 1;
+    let lo = 0;
+    let hi = subsections.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      if (x < subsections[mid].xLeft) {
+        hi = mid - 1;
+      } else if (x >= subsections[mid].xRight) {
+        lo = mid + 1;
+      } else {
+        return mid;
+      }
+    }
+    return subsections.length - 1;
+  }
   if (calculated && !nhPaused) {
     const speedScale = 0.00008;
     nhParticles.forEach((p) => {
       const xActual = x0 + p.t * L;
-      const sIndex = Math.min(subsections.length - 1, Math.max(0, Math.floor((xActual - x0) / L * subsections.length)));
+      const sIndex = subsectionIndexAt(xActual);
       const sr = sectionResults[sIndex];
-      const localMaxV = sr ? sr.data.maxVelocity : 0;
-      const velocityRatio = globalMaxV > 0 ? localMaxV / globalMaxV : 0;
+      const localMeanV = sr ? sr.data.meanVelocity : 0;
+      const velocityRatio = localMeanV / globalMeanV;
       p.t = (p.t + delta * speedScale * (0.08 + velocityRatio)) % 1;
     });
   }
   if (calculated) {
     nhParticles.forEach((p) => {
       const xActual = x0 + p.t * L;
-      const sIndex = Math.min(subsections.length - 1, Math.max(0, Math.floor((xActual - x0) / L * subsections.length)));
+      const sIndex = subsectionIndexAt(xActual);
       const sr = sectionResults[sIndex];
       const r = sr ? sr.data.params.R : radiusAt(points, xActual, els.profileMode.value);
-      const localMaxV = sr ? sr.data.maxVelocity : 0;
-      const velocityRatio = nhGeometry.globalMaxV > 0 ? localMaxV / nhGeometry.globalMaxV : 0;
+      const localMeanV = sr ? sr.data.meanVelocity : 0;
+      const velocityRatio = localMeanV / globalMeanV;
       const px = mapX(xActual);
       const py = centerY + p.y * r * yScale;
       ctx.fillStyle = `rgba(218, 255, 250, ${p.alpha * (0.25 + velocityRatio * 0.75)})`;
@@ -700,7 +790,7 @@ function toggleDuctMode() {
     els.yieldStressNumber.max = '1e12';
     if (els.yieldStressMax) els.yieldStressMax.textContent = '';
     if (!nhGeometry) generateGeometry();
-    else { drawDuctProfile(); drawDuctFlow(); }
+    else { showNHVisual(nhView || 'profile'); }
   } else {
     drawProfileChart();
     drawFlow();
@@ -730,14 +820,32 @@ function flowRateAtG(G, params) {
   return calculate({ ...params, G }).flowRate;
 }
 
-function solveForG(targetQ, params) {
+function estimateGForQ(targetQ, params) {
+  const R = params.R;
+  const tau0 = params.model === 'bingham' || params.model === 'herschelBulkley' ? params.tau0 : 0;
+  const thresholdG = tau0 > 0 ? (2 * tau0) / R : 0;
+  if (targetQ <= 0) return thresholdG;
+  const n = Math.max(0.2, Number(params.n) || 1);
+  const K = params.model === 'newtonian' || params.model === 'bingham' ? params.mu : params.H;
+  let flowG = 0;
+  if (params.model === 'newtonian' || params.model === 'bingham') {
+    flowG = (8 * K * targetQ) / (Math.PI * R ** 4);
+  } else if (params.model === 'powerLaw' || params.model === 'herschelBulkley') {
+    const exponent = (3 * n + 1) / n;
+    flowG = 2 * K * ((targetQ * (3 * n + 1)) / (Math.PI * n * R ** exponent)) ** n;
+  }
+  return thresholdG + flowG;
+}
+
+function solveForG(targetQ, params, tolerance = 1e-6) {
   if (!Number.isFinite(targetQ) || targetQ <= 0) return 0;
   const hasYield = params.model === 'bingham' || params.model === 'herschelBulkley';
   const minG = hasYield && params.tau0 > 0 ? (2 * params.tau0) / params.R : 0;
   if (flowRateAtG(minG, params) >= targetQ) return minG;
 
   let lo = minG;
-  let hi = Math.max(minG + 1, Number(params.G) || defaults.pressureGradient);
+  const hint = Number(params.G) || defaults.pressureGradient;
+  let hi = Math.max(minG + 1, estimateGForQ(targetQ, params), hint);
   for (let safety = 0; safety < 30; safety += 1) {
     const qHi = flowRateAtG(hi, params);
     if (qHi >= targetQ || hi > 1e12) break;
@@ -749,9 +857,81 @@ function solveForG(targetQ, params) {
     const qMid = flowRateAtG(mid, params);
     if (qMid < targetQ) lo = mid;
     else hi = mid;
-    if (hi - lo < 1e-6 * hi) break;
+    if (hi - lo < tolerance * hi) break;
   }
   return (lo + hi) / 2;
+}
+
+function thresholdPressure(baseParams, subsections) {
+  const tau0 = baseParams.model === 'bingham' || baseParams.model === 'herschelBulkley' ? baseParams.tau0 : 0;
+  if (!tau0) return 0;
+  return subsections.reduce((sum, s) => sum + (2 * tau0 / s.r) * s.dx, 0);
+}
+
+function estimateFlowRateForPressure(targetP, baseParams, subsections) {
+  if (targetP <= 0) return 0;
+  const tau0 = baseParams.model === 'bingham' || baseParams.model === 'herschelBulkley' ? baseParams.tau0 : 0;
+  const thresholdP = tau0 > 0 ? subsections.reduce((sum, s) => sum + (2 * tau0 / s.r) * s.dx, 0) : 0;
+  if (targetP <= thresholdP) return 0;
+  const n = Math.max(0.2, Number(baseParams.n) || 1);
+  const K = baseParams.model === 'newtonian' || baseParams.model === 'bingham' ? baseParams.mu : baseParams.H;
+  const effectiveP = Math.max(0, targetP - thresholdP);
+  if (baseParams.model === 'newtonian' || baseParams.model === 'bingham') {
+    const denom = (8 * K / Math.PI) * subsections.reduce((sum, s) => sum + s.dx / (s.r ** 4), 0);
+    return denom > 0 ? effectiveP / denom : 0;
+  }
+  const exponent = 3 * n + 1;
+  const sum = subsections.reduce((sum, s) => sum + s.dx / (s.r ** exponent), 0);
+  if (sum <= 0) return 0;
+  return (Math.PI * n / (3 * n + 1)) * Math.pow(effectiveP / (2 * K * sum), 1 / n);
+}
+
+function totalPressureForQ(Q, baseParams, subsections, tolerance = 1e-3) {
+  let total = 0;
+  for (let i = 0; i < subsections.length; i += 1) {
+    const s = subsections[i];
+    const G = solveForG(Q, { ...baseParams, R: s.r, tubeLength: s.dx, G: baseParams.pressureGradient }, tolerance);
+    total += G * s.dx;
+  }
+  return total;
+}
+
+function solveGlobalQ(targetP, baseParams, subsections) {
+  if (!Number.isFinite(targetP) || targetP <= 0 || subsections.length === 0) return 0;
+  const thresholdP = thresholdPressure(baseParams, subsections);
+  if (targetP <= thresholdP) return 0;
+  const Qest = estimateFlowRateForPressure(targetP, baseParams, subsections);
+  let lo = 0;
+  let pLo = thresholdP;
+  let hi = Math.max(Qest * 2, 1e-12);
+  let pHi = totalPressureForQ(hi, baseParams, subsections, 1e-3);
+  for (let safety = 0; safety < 30; safety += 1) {
+    if (pHi >= targetP || !Number.isFinite(pHi) || hi > 1e12) break;
+    hi *= 2;
+    pHi = totalPressureForQ(hi, baseParams, subsections, 1e-3);
+  }
+  if (!Number.isFinite(pHi) || pHi < targetP) return hi;
+  let fLo = pLo - targetP;
+  let fHi = pHi - targetP;
+  let Q = hi;
+  for (let i = 0; i < 40; i += 1) {
+    const newQ = hi - fHi * (hi - lo) / (fHi - fLo);
+    const newP = totalPressureForQ(newQ, baseParams, subsections, 1e-3);
+    const newF = newP - targetP;
+    Q = newQ;
+    if (Math.abs(newF) < 1e-4 * Math.max(1, targetP) || Math.abs(hi - lo) < 1e-7 * hi) break;
+    if (newF * fHi < 0) {
+      lo = hi;
+      fLo = fHi;
+      hi = newQ;
+      fHi = newF;
+    } else {
+      hi = newQ;
+      fHi = newF;
+      fLo *= 0.5;
+    }
+  }
+  return Q;
 }
 
 function calculate(params) {
@@ -894,11 +1074,13 @@ function syncSliderAndNumber(numberInput, slider, isLog) {
     } else {
       slider.value = String(Math.max(min, Math.min(max, v)));
     }
+    markResultsDirty();
   });
   slider.addEventListener('input', () => {
     const v = Number(slider.value);
     if (!Number.isFinite(v)) return;
     numberInput.value = String(isLog ? 10 ** v : v);
+    markResultsDirty();
   });
 }
 
@@ -1256,7 +1438,7 @@ function refresh() {
   const pressureSpecMode = els.pressureSpecMode.value;
   if (els.ductMode.value === 'nonHomogeneous') {
     updateControls(getParameters(), { flowMode, pressureSpecMode });
-    if (nhGeometry) { drawDuctProfile(); drawDuctFlow(); }
+    if (nhGeometry) showNHVisual(nhView || 'profile');
     return;
   }
   let params = getParameters();
@@ -1511,16 +1693,28 @@ els.themeButton.addEventListener('click', () => {
 els.resetButton.addEventListener('click', reset);
 els.exportButton.addEventListener('click', exportCsv);
 els.ductMode.addEventListener('change', toggleDuctMode);
-els.generateGeometryButton.addEventListener('click', generateGeometry);
-els.calculateDuctButton.addEventListener('click', calculateNonHomogeneous);
+els.generateGeometryButton.addEventListener('click', () => {
+  if (nhGeometry && !nhGeometry.geometryDirty) showNHVisual('profile');
+  else generateGeometry();
+});
+els.calculateDuctButton.addEventListener('click', () => {
+  if (!nhGeometry || nhGeometry.geometryDirty) return;
+  if (!nhGeometry.calculated || nhGeometry.resultsDirty) calculateNonHomogeneous();
+  else showNHVisual('flow');
+});
 els.geometryInput.addEventListener('input', () => {
   sanitizeGeometryInput();
   els.geometryInput.classList.remove('invalid');
+  if (els.ductMode.value === 'nonHomogeneous') markGeometryDirty();
 });
 els.profileMode.addEventListener('change', () => { if (els.ductMode.value === 'nonHomogeneous') generateGeometry(); });
 els.subdivisionsInput.addEventListener('input', () => { if (els.ductMode.value === 'nonHomogeneous') generateGeometry(); });
-els.flowMode.addEventListener('change', refresh);
-els.pressureSpecMode.addEventListener('change', refresh);
+els.flowMode.addEventListener('change', () => { if (els.ductMode.value === 'nonHomogeneous') markResultsDirty(); refresh(); });
+els.pressureSpecMode.addEventListener('change', () => { if (els.ductMode.value === 'nonHomogeneous') markResultsDirty(); refresh(); });
+els.model.addEventListener('change', markResultsDirty);
+[els.density, els.soundSpeed, els.flowRateInput, els.pressureGradientInput, els.pressureDifference, els.radius, els.tubeLength].forEach((input) => {
+  input.addEventListener('input', markResultsDirty);
+});
 els.nhPauseButton.addEventListener('click', () => {
   nhPaused = !nhPaused;
   els.nhPauseButton.classList.toggle('paused', nhPaused);
