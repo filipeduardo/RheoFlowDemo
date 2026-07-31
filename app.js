@@ -5,10 +5,10 @@ const defaults = {
   model: 'herschelBulkley',
   radius: 0.05,
   pressureGradient: 12000,
-  viscosity: 0.1,
-  consistency: 0.5012,
-  flowIndex: 0.65,
-  yieldStress: 45,
+  viscosity: 0.001,
+  consistency: 0.001,
+  flowIndex: 0.6,
+  yieldStress: 0.6,
   flowMode: 'pressureGradient',
   pressureSpecMode: 'gradient',
   pressureDifference: 6000,
@@ -18,9 +18,26 @@ const defaults = {
   soundSpeed: 1500
 };
 
+function getModelDefaults(model) {
+  const base = {
+    viscosity: 0.001,
+    consistency: 0.001,
+    flowIndex: 0.6,
+    yieldStress: 0
+  };
+  if (model === 'newtonian') return { ...base, yieldStress: 0 };
+  if (model === 'powerLaw') return { ...base, yieldStress: 0 };
+  if (model === 'bingham') return { ...base, yieldStress: 0.5 };
+  if (model === 'herschelBulkley') return { ...base, yieldStress: 0.6 };
+  return base;
+}
+
+const DEBUG = false;
+
 const units = {
   pressure: 'Pa',
   length: 'm',
+  velocity: 'm/s',
   flowRate: 'm3/d',
   density: 'kg/m3'
 };
@@ -35,6 +52,11 @@ const unitOptions = {
     { value: 'm', label: 'm', toBase: 1 },
     { value: 'ft', label: 'ft', toBase: 0.3048 },
     { value: 'in', label: 'in', toBase: 0.0254 }
+  ],
+  velocity: [
+    { value: 'm/s', label: 'm/s', toBase: 1 },
+    { value: 'ft/s', label: 'ft/s', toBase: 0.3048 },
+    { value: 'in/s', label: 'in/s', toBase: 0.0254 }
   ],
   flowRate: [
     { value: 'm3/d', label: 'm³/d', toBase: 1 / 86400 },
@@ -61,8 +83,8 @@ function toSI(value, dimension, unitValue) {
     return value * (pDef.toBase / lDef.toBase);
   }
   if (dimension === 'velocity') {
-    const lDef = getUnitDef('length', unitValue || units.length);
-    return value * lDef.toBase;
+    const vDef = getUnitDef('velocity', unitValue || units.velocity);
+    return value * vDef.toBase;
   }
   const def = getUnitDef(dimension, unitValue || units[dimension]);
   if (typeof def.toBase === 'function') return def.toBase(value);
@@ -76,8 +98,8 @@ function fromSI(value, dimension, unitValue) {
     return value * (lDef.toBase / pDef.toBase);
   }
   if (dimension === 'velocity') {
-    const lDef = getUnitDef('length', unitValue || units.length);
-    return value / lDef.toBase;
+    const vDef = getUnitDef('velocity', unitValue || units.velocity);
+    return value / vDef.toBase;
   }
   const def = getUnitDef(dimension, unitValue || units[dimension]);
   if (typeof def.fromBase === 'function') return def.fromBase(value);
@@ -91,8 +113,7 @@ function getUnitLabel(dimension, unitValue) {
     return `${pDef.label}/${lDef.label}`;
   }
   if (dimension === 'velocity') {
-    const lDef = getUnitDef('length', unitValue || units.length);
-    return `${lDef.label}/s`;
+    return getUnitDef('velocity', unitValue || units.velocity).label;
   }
   return getUnitDef(dimension, unitValue || units[dimension]).label;
 }
@@ -171,7 +192,7 @@ const els = {
   wallStress: $('#wallStress'),
   pressureGradient: $('#pressureGradient'),
   pressureDifferenceOutput: $('#pressureDifferenceOutput'),
-  reynoldsNumber: $('#reynoldsNumber'),
+  dpMethod: $('#dpMethod'),
   localGradient: $('#localGradient'),
   reynoldsHbeNumber: $('#reynoldsHbeNumber'),
   darcyFriction: $('#darcyFriction'),
@@ -185,7 +206,6 @@ const els = {
   equation: $('#equation'),
   wallStressEquation: $('#wallStressEquation'),
   flowRateEquation: $('#flowRateEquation'),
-  reynoldsEquation: $('#reynoldsEquation'),
   localGradientEquation: $('#localGradientEquation'),
   reynoldsHbeEquation: $('#reynoldsHbeEquation'),
   darcyFrictionEquation: $('#darcyFrictionEquation'),
@@ -213,6 +233,7 @@ const els = {
   ductMode: $('#ductMode'),
   nonHomogeneousGeometry: $('#nonHomogeneousGeometry'),
   geometryInput: $('#geometryInput'),
+  geometryWarning: $('#geometryWarning'),
   geometryUnitLabel: $('#geometryUnitLabel'),
   profileMode: $('#profileMode'),
   subdivisionsInput: $('#subdivisionsInput'),
@@ -234,6 +255,8 @@ const els = {
   nhReMedian: $('#nhReMedian'),
   nhAvgMach: $('#nhAvgMach'),
   nhSectionCount: $('#nhSectionCount'),
+  ductLegendMin: $('#ductLegendMin'),
+  ductLegendMax: $('#ductLegendMax'),
   ductProfileCanvas: $('#ductProfileCanvas'),
   ductFlowCanvas: $('#ductFlowCanvas'),
   nhProfileWrap: $('#nhProfileWrap'),
@@ -324,59 +347,85 @@ function linearInterpolate(points, x) {
   return p0.r + t * (p1.r - p0.r);
 }
 
-function buildCubicSpline(points) {
-  const n = points.length;
-  const h = new Array(n - 1);
-  for (let i = 0; i < n - 1; i += 1) h[i] = points[i + 1].x - points[i].x;
-  const alpha = new Array(n).fill(0);
-  for (let i = 1; i < n - 1; i += 1) {
-    alpha[i] = (3 / h[i]) * (points[i + 1].r - points[i].r) - (3 / h[i - 1]) * (points[i].r - points[i - 1].r);
-  }
-  const l = new Array(n).fill(1);
-  const mu = new Array(n).fill(0);
-  const z = new Array(n).fill(0);
-  for (let i = 1; i < n - 1; i += 1) {
-    l[i] = 2 * (points[i + 1].x - points[i - 1].x) - h[i - 1] * mu[i - 1];
-    mu[i] = h[i] / l[i];
-    z[i] = (alpha[i] - h[i - 1] * z[i - 1]) / l[i];
-  }
-  const c = new Array(n).fill(0);
-  const b = new Array(n - 1);
-  const d = new Array(n - 1);
-  for (let j = n - 2; j >= 0; j -= 1) {
-    c[j] = z[j] - mu[j] * c[j + 1];
-    b[j] = (points[j + 1].r - points[j].r) / h[j] - h[j] * (c[j + 1] + 2 * c[j]) / 3;
-    d[j] = (c[j + 1] - c[j]) / (3 * h[j]);
-  }
-  return { points, b, c, d };
+function pchipEdgeCase(h0, h1, m0, m1) {
+  // One-sided three-point estimate for the derivative (Fritsch–Carlson / Moler).
+  const d = ((2 * h0 + h1) * m0 - h0 * m1) / (h0 + h1);
+  if (Math.sign(d) !== Math.sign(m0)) return 0;
+  if (Math.abs(d) > 3 * Math.abs(m0)) return 3 * m0;
+  return d;
 }
 
-function cubicInterpolate(points, x) {
+function buildPchipSpline(points) {
+  const n = points.length;
+  const h = [];
+  const m = [];
+  for (let i = 0; i < n - 1; i += 1) {
+    const hi = points[i + 1].x - points[i].x;
+    h[i] = hi;
+    m[i] = hi > 0 ? (points[i + 1].r - points[i].r) / hi : 0;
+  }
+  if (n === 2) return { points, d: [m[0], m[0]] };
+  const d = new Array(n).fill(0);
+  for (let i = 1; i < n - 1; i += 1) {
+    const sm0 = Math.sign(m[i - 1]);
+    const sm1 = Math.sign(m[i]);
+    if (sm0 === 0 || sm1 === 0 || sm0 !== sm1) {
+      d[i] = 0;
+    } else {
+      const w1 = 2 * h[i] + h[i - 1];
+      const w2 = h[i] + 2 * h[i - 1];
+      d[i] = (w1 + w2) / (w1 / m[i - 1] + w2 / m[i]);
+    }
+  }
+  d[0] = pchipEdgeCase(h[0], h[1], m[0], m[1]);
+  d[n - 1] = pchipEdgeCase(h[n - 2], h[n - 3], m[n - 2], m[n - 3]);
+  return { points, d };
+}
+
+function cubicInterpolate(points, x, stats = null) {
   if (points.length < 3) return linearInterpolate(points, x);
-  if (!points.cubicSpline) points.cubicSpline = buildCubicSpline(points);
-  const pts = points.cubicSpline.points;
+  if (!points.pchipSpline) points.pchipSpline = buildPchipSpline(points);
+  const pts = points.pchipSpline.points;
   if (x <= pts[0].x) return pts[0].r;
   if (x >= pts[pts.length - 1].x) return pts[pts.length - 1].r;
   let i = 1;
   while (i < pts.length && pts[i].x < x) i += 1;
   const j = i - 1;
-  const dx = x - pts[j].x;
-  const spline = points.cubicSpline;
-  return pts[j].r + spline.b[j] * dx + spline.c[j] * dx * dx + spline.d[j] * dx * dx * dx;
+  const x0 = pts[j].x;
+  const x1 = pts[j + 1].x;
+  const h = x1 - x0;
+  if (h <= 0) return pts[j].r;
+  const t = (x - x0) / h;
+  const r0 = pts[j].r;
+  const r1 = pts[j + 1].r;
+  const d0 = points.pchipSpline.d[j] * h;
+  const d1 = points.pchipSpline.d[j + 1] * h;
+  const t2 = t * t;
+  const t3 = t2 * t;
+  const h00 = 2 * t3 - 3 * t2 + 1;
+  const h10 = t3 - 2 * t2 + t;
+  const h01 = -2 * t3 + 3 * t2;
+  const h11 = t3 - t2;
+  const val = r0 * h00 + d0 * h10 + r1 * h01 + d1 * h11;
+  if (stats && val < 1e-6) stats.clamped += 1;
+  return val;
 }
 
-function radiusAt(points, x, mode) {
-  if (mode === 'cubic' && points.length >= 3) return Math.max(1e-6, cubicInterpolate(points, x));
-  return Math.max(1e-6, linearInterpolate(points, x));
+function radiusAt(points, x, mode, stats = null) {
+  const raw = mode === 'cubic' && points.length >= 3 ? cubicInterpolate(points, x, stats) : linearInterpolate(points, x);
+  if (raw < 1e-6 && stats) stats.clamped += 1;
+  return Math.max(1e-6, raw);
 }
 
 function buildSubsections(points, subdivisions, mode) {
   let nPer = Math.max(1, Math.min(1000, Math.floor(Number(subdivisions) || 20)));
-  const maxTotal = 10000;
+  const maxTotal = 2000;
   const nTotal = (points.length - 1) * nPer;
-  if (nTotal > maxTotal) {
+  const capped = nTotal > maxTotal;
+  if (capped) {
     nPer = Math.max(1, Math.floor(maxTotal / (points.length - 1)));
   }
+  const stats = { clamped: 0 };
   const subsections = [];
   for (let i = 0; i < points.length - 1; i += 1) {
     const x0 = points[i].x;
@@ -386,38 +435,24 @@ function buildSubsections(points, subdivisions, mode) {
       const xLeft = x0 + k * dx;
       const xRight = (k === nPer - 1) ? x1 : x0 + (k + 1) * dx;
       const xCenter = (xLeft + xRight) / 2;
-      const r = radiusAt(points, xCenter, mode);
+      const r = radiusAt(points, xCenter, mode, stats);
       subsections.push({ xLeft, xRight, xCenter, r, dx: xRight - xLeft, segmentIndex: i });
     }
   }
-  return { n: subsections.length, subdivisionsPerSegment: nPer, subsections };
+  return { n: subsections.length, subdivisionsPerSegment: nPer, subsections, clampCount: stats.clamped, capped };
 }
 
-function getDiagnostics(data, params) {
-  const V = data.meanVelocity;
-  const D = 2 * params.R;
-  const n = params.model === 'powerLaw' || params.model === 'herschelBulkley' ? params.n : 1;
-  const K = params.model === 'newtonian' || params.model === 'bingham' ? params.mu : params.H;
-  const tau0 = params.model === 'bingham' || params.model === 'herschelBulkley' ? params.tau0 : 0;
-  const factor = n > 0 ? (3 * n + 1) / (4 * n) : 1;
-  const shearRateWall = V > 0 ? 8 * V / D : 0;
-  const denom = tau0 + K * (factor ** n) * (shearRateWall ** n);
-  const re = V > 0 && denom > 0 ? (8 * params.density * V * V * factor) / denom : 0;
-  const mach = params.soundSpeed > 0 ? V / params.soundSpeed : 0;
-  return { re, mach, V, maxV: data.maxVelocity };
-}
-
-function solveSection(baseParams, R, dx, flowSpec) {
+function solveSection(baseParams, R, dx, flowSpec, hint = null) {
   const params = { ...baseParams, R: Math.max(1e-6, R), tubeLength: dx };
   let G;
   if (flowSpec.flowMode === 'flowRate') {
-    G = solveForG(flowSpec.targetQ, { ...params, G: defaults.pressureGradient });
+    G = solveForG(flowSpec.targetQ, { ...params, G: Number.isFinite(hint) ? hint : defaults.pressureGradient }, 1e-6, Number.isFinite(hint) ? hint : null);
   } else {
     G = flowSpec.G;
   }
   const data = calculate({ ...params, G });
-  const d = getDiagnostics(data, { ...params, G });
-  return { data, G, re: d.re, mach: d.mach, dp: G * dx, dx };
+  const d = computeDiagnostics(data, params);
+  return { data, G, reHbe: d.reHbe, mach: d.mach, dp: dpEffective(params, data, d), dx };
 }
 
 function median(values) {
@@ -486,6 +521,14 @@ function generateGeometry() {
   const points = parseGeometryInput();
   if (!points || points.length < 2) {
     els.geometryInput.classList.add('invalid');
+    if (els.geometryWarning) { els.geometryWarning.textContent = ''; els.geometryWarning.hidden = true; }
+    nhGeometry = null;
+    updateNHButtons();
+    return;
+  }
+  if (points.length > 500) {
+    els.geometryInput.classList.add('invalid');
+    if (els.geometryWarning) { els.geometryWarning.textContent = 'Aviso: o número máximo de pontos é 500. Reduza a geometria ou aumente o espaçamento entre pontos.'; els.geometryWarning.hidden = false; }
     nhGeometry = null;
     updateNHButtons();
     return;
@@ -493,9 +536,21 @@ function generateGeometry() {
   els.geometryInput.classList.remove('invalid');
   const mode = els.profileMode.value;
   const subdivisions = Math.max(1, Math.floor(Number(els.subdivisionsInput.value) || 20));
-  const { n, subdivisionsPerSegment, subsections } = buildSubsections(points, subdivisions, mode);
+  const { n, subdivisionsPerSegment, subsections, clampCount, capped } = buildSubsections(points, subdivisions, mode);
   if (subdivisionsPerSegment !== subdivisions) els.subdivisionsInput.value = subdivisionsPerSegment;
-  nhGeometry = { points, mode, subdivisions: n, subdivisionsPerSegment, subsections, calculated: false, sectionResults: null, segmentResults: null, totalPressure: 0, geometryDirty: false, resultsDirty: true };
+  nhGeometry = { points, mode, subdivisions: n, subdivisionsPerSegment, subsections, clampCount, capped, calculated: false, sectionResults: null, segmentResults: null, totalPressure: 0, geometryDirty: false, resultsDirty: true };
+  if (els.geometryWarning) {
+    const messages = [];
+    if (clampCount > 0) messages.push(`${clampCount} trecho(s) com raio < 1 µm foram truncados.`);
+    if (capped) messages.push(`Número de subseções limitado a 2000; subdivisões por trecho ajustadas para ${subdivisionsPerSegment}.`);
+    if (messages.length > 0) {
+      els.geometryWarning.textContent = `Aviso: ${messages.join(' ')}`;
+      els.geometryWarning.hidden = false;
+    } else {
+      els.geometryWarning.textContent = '';
+      els.geometryWarning.hidden = true;
+    }
+  }
   resetNHParticles();
   showNHVisual('profile');
   updateNHButtons();
@@ -507,13 +562,15 @@ function verifyNHResults(sectionResults, targetQ, targetP, flowMode) {
   const maxQError = targetQ > 0 ? Math.max(...qValues.map((q) => Math.abs(q - targetQ) / Math.abs(targetQ))) : 0;
   const computedP = sectionResults.reduce((sum, sr) => sum + sr.dp, 0);
   const pError = targetP > 0 ? Math.abs(computedP - targetP) / targetP : 0;
-  console.log('[RheoFlow NH verify] flowMode:', flowMode, 'target Q:', targetQ, 'max section Q error:', maxQError, 'computed Δp:', computedP, 'target Δp:', targetP, 'relative Δp error:', pError);
-  if (targetQ === 0) {
-    console.log('[RheoFlow NH verify] no flow (target pressure below yield threshold)');
-  } else if (maxQError > 1e-3 || pError > 1e-2) {
-    console.warn('[RheoFlow NH verify] mismatch detected', { maxQError, pError, sectionCount: sectionResults.length });
-  } else {
-    console.log('[RheoFlow NH verify] OK');
+  if (DEBUG) {
+    console.log('[RheoFlow NH verify] flowMode:', flowMode, 'target Q:', targetQ, 'max section Q error:', maxQError, 'computed Δp:', computedP, 'target Δp:', targetP, 'relative Δp error:', pError);
+    if (targetQ === 0) {
+      console.log('[RheoFlow NH verify] no flow (target pressure below yield threshold)');
+    } else if (maxQError > 1e-3 || pError > 1e-2) {
+      console.warn('[RheoFlow NH verify] mismatch detected', { maxQError, pError, sectionCount: sectionResults.length });
+    } else {
+      console.log('[RheoFlow NH verify] OK');
+    }
   }
 }
 
@@ -534,7 +591,14 @@ function calculateNonHomogeneous() {
     targetQ = solveGlobalQ(targetP, baseParams, subsections);
   }
   const flowSpec = { flowMode: 'flowRate', targetQ };
-  const sectionResults = subsections.map((s) => solveSection(baseParams, s.r, s.dx, flowSpec));
+  const sectionResults = [];
+  let sectionHint = null;
+  for (let i = 0; i < subsections.length; i += 1) {
+    const s = subsections[i];
+    const sr = solveSection(baseParams, s.r, s.dx, flowSpec, sectionHint);
+    sectionResults.push(sr);
+    sectionHint = sr.G;
+  }
   const totalPressure = sectionResults.reduce((sum, sr) => sum + sr.dp, 0);
   verifyNHResults(sectionResults, targetQ, flowMode === 'pressureGradient' ? targetP : totalPressure, flowMode);
   const r2Sum = subsections.reduce((sum, s) => sum + s.r * s.r * s.dx, 0);
@@ -550,9 +614,9 @@ function calculateNonHomogeneous() {
     const centerIdx = Math.floor(segmentSubs.length / 2);
     const centerSr = segmentSubs[centerIdx] || segmentSubs[0];
     const dpSum = segmentSubs.reduce((sum, sr) => sum + sr.dp, 0);
-    if (centerSr) segmentResults.push({ x, dx, r: centerSr.data.params.R, meanV: centerSr.data.meanVelocity, re: centerSr.re, mach: centerSr.mach, dp: dpSum });
+    if (centerSr) segmentResults.push({ x, dx, r: centerSr.data.params.R, meanV: centerSr.data.meanVelocity, reHbe: centerSr.reHbe, mach: centerSr.mach, dp: dpSum });
   }
-  const reValues = sectionResults.map((s) => s.re);
+  const reValues = sectionResults.map((s) => s.reHbe);
   nhGeometry = {
     ...nhGeometry,
     sectionResults,
@@ -569,8 +633,10 @@ function calculateNonHomogeneous() {
     baseParams,
     flowSpec
   };
-  console.log(`[RheoFlow NH resolution] ${subsections.length} subsections, total Δp = ${totalPressure.toExponential(8)} Pa, mode = ${flowMode}`);
-  console.table(segmentResults.map((s, i) => ({ section: i + 1, x: s.x, dx: s.dx, R: s.r, U: s.meanV, Re: s.re, Ma: s.mach, dp: s.dp })));
+  if (DEBUG) {
+    console.log(`[RheoFlow NH resolution] ${subsections.length} subsections, total Δp = ${totalPressure.toExponential(8)} Pa, mode = ${flowMode}`);
+    console.table(segmentResults.map((s, i) => ({ section: i + 1, x: s.x, dx: s.dx, R: s.r, U: s.meanV, Re: s.reHbe, Ma: s.mach, dp: s.dp })));
+  }
   updateNonHomogeneousMetrics();
   showNHVisual('flow');
   updateNHButtons();
@@ -588,7 +654,12 @@ function updateUnitDisplay(element, dimension) {
 
 function updateNonHomogeneousMetrics() {
   if (!nhGeometry) return;
-  const { totalPressure, avgRadius, avgVelocity, avgMach, reMax, reMedian, segmentResults, subsections } = nhGeometry;
+  const { points, totalPressure, avgRadius, avgVelocity, avgMach, reMax, reMedian, segmentResults, subsections } = nhGeometry;
+  if (els.ductLegendMin && els.ductLegendMax) {
+    const unitLabel = getUnitLabel('length');
+    els.ductLegendMin.textContent = `x = ${formatValue(fromSI(points[0].x, 'length'), 3)} ${unitLabel}`;
+    els.ductLegendMax.textContent = `x = ${formatValue(fromSI(points[points.length - 1].x, 'length'), 3)} ${unitLabel}`;
+  }
   els.nhTotalPressure.textContent = formatValue(fromSI(totalPressure, 'pressure'), 3);
   updateUnitDisplay(els.nhTotalPressureUnit, 'pressure');
   els.nhAvgRadius.textContent = formatValue(fromSI(avgRadius, 'length'), 4);
@@ -618,7 +689,7 @@ function updateNonHomogeneousMetrics() {
   } else {
     els.nhFlowState.innerHTML = '<span></span>Escoando';
   }
-  els.nhSectionTableBody.innerHTML = segmentResults.map((s) => `<tr><td>${formatValue(fromSI(s.x, 'length'), 3)}</td><td>${formatValue(fromSI(s.dx, 'length'), 3)}</td><td>${formatValue(fromSI(s.r, 'length'), 4)}</td><td>${formatValue(fromSI(s.meanV, 'velocity'), 3)}</td><td>${formatValue(s.re, 2)}</td><td>${formatValue(fromSI(s.dp, 'pressure'), 3)}</td></tr>`).join('');
+  els.nhSectionTableBody.innerHTML = segmentResults.map((s) => `<tr><td>${formatValue(fromSI(s.x, 'length'), 3)}</td><td>${formatValue(fromSI(s.dx, 'length'), 3)}</td><td>${formatValue(fromSI(s.r, 'length'), 4)}</td><td>${formatValue(fromSI(s.meanV, 'velocity'), 3)}</td><td>${formatValue(s.reHbe, 2)}</td><td>${formatValue(fromSI(s.dp, 'pressure'), 3)}</td></tr>`).join('');
 }
 
 function drawDuctProfile() {
@@ -796,12 +867,13 @@ function toggleDuctMode() {
   els.nonHomogeneousDashboard.hidden = !isNH;
   els.geometryUnitLabel.textContent = getUnitLabel('length');
   if (isNH) {
-    els.yieldStress.max = '1e12';
+    els.yieldStress.disabled = true;
     els.yieldStressNumber.max = '1e12';
     if (els.yieldStressMax) els.yieldStressMax.textContent = '';
     if (!nhGeometry) generateGeometry();
     else { showNHVisual(nhView || 'profile'); }
   } else {
+    els.yieldStress.disabled = false;
     drawProfileChart();
     drawFlow();
   }
@@ -819,15 +891,73 @@ function getParameters() {
     flowRate: readNonNegativeDisplay(els.flowRateInput, 'flowRate', defaults.flowRate),
     density: Number.isFinite(densitySI) && densitySI > 0 ? densitySI : defaults.density,
     soundSpeed: readDisplay(els.soundSpeed, 'velocity', defaults.soundSpeed),
-    mu: readPositive(els.viscosityNumber, defaults.viscosity),
-    H: readPositive(els.consistencyNumber, defaults.consistency),
-    n: Math.max(0.2, Number(els.flowIndexNumber.value) || defaults.flowIndex),
+    mu: Math.min(10, Math.max(0.001, readPositive(els.viscosityNumber, defaults.viscosity))),
+    H: Math.min(100, Math.max(0.001, readPositive(els.consistencyNumber, defaults.consistency))),
+    n: Math.min(1.8, Math.max(0.2, Number(els.flowIndexNumber.value) || defaults.flowIndex)),
     tau0: Math.max(0, Number(els.yieldStressNumber.value) || 0)
   };
 }
 
+function flowRateAnalytic(tauW, params) {
+  const R = params.R;
+  if (!Number.isFinite(tauW) || tauW <= 0 || !Number.isFinite(R) || R <= 0) return 0;
+  const n = params.model === 'newtonian' || params.model === 'bingham' ? 1 : Math.max(0.2, Number(params.n) || 1);
+  const K = params.model === 'newtonian' || params.model === 'bingham' ? params.mu : params.H;
+  const tau0 = params.model === 'bingham' || params.model === 'herschelBulkley' ? params.tau0 : 0;
+  if (tauW <= tau0) return 0;
+  if (K <= 0) return 0;
+
+  const base = Math.PI * Math.pow(R, 3) * Math.pow(tauW / K, 1 / n);
+  const Pl = tau0 / tauW;
+  const o = 1 - Pl;
+  const a = 1 / n + 3;
+  const b = 1 / n + 2;
+  const c = 1 / n + 1;
+  const bracket = Math.pow(o, a) / a + 2 * Pl * Math.pow(o, b) / b + Pl * Pl * Math.pow(o, c) / c;
+  return base * bracket;
+}
+
 function flowRateAtG(G, params) {
-  return calculate({ ...params, G }).flowRate;
+  const R = params.R;
+  if (!Number.isFinite(G) || G <= 0 || !Number.isFinite(R) || R <= 0) return 0;
+  const tauW = (G * R) / 2;
+  return flowRateAnalytic(tauW, params);
+}
+
+function computeDiagnostics(data, params) {
+  const V = data.meanVelocity;
+  const D = 2 * params.R;
+  const n = params.model === 'newtonian' || params.model === 'bingham' ? 1 : Math.max(0.2, Number(params.n) || 1);
+  const K = params.model === 'newtonian' || params.model === 'bingham' ? params.mu : params.H;
+  const tau0 = params.model === 'bingham' || params.model === 'herschelBulkley' ? params.tau0 : 0;
+
+  const mach = params.soundSpeed > 0 ? V / params.soundSpeed : 0;
+  const gammaAppw = V > 0 && D > 0 ? (8 * V) / D : 0;
+  const tauApparent = tau0 + K * Math.pow(gammaAppw, n);
+  const m = tauApparent > 0 ? (n * K * Math.pow(gammaAppw, n)) / tauApparent : (n > 0 ? n : 1);
+  const mClamped = Number.isFinite(m) && m > 0 ? m : (n > 0 ? n : 1);
+
+  const mForRe = Number.isFinite(m) && m > 0 ? m : (n > 0 ? n : 1);
+  let reHbe = 0;
+  if (V > 0 && D > 0) {
+    const mFactor = (3 * mForRe + 1) / (4 * mForRe);
+    const denomHbe = (tau0 / 8) * Math.pow(D / V, n) + K * Math.pow(mFactor, n) * Math.pow(8, n - 1);
+    if (Number.isFinite(denomHbe) && denomHbe > 0) {
+      reHbe = (params.density * Math.pow(V, 2 - n) * Math.pow(D, n)) / denomHbe;
+    }
+  }
+
+  const fDarcy = darcyFrictionFactor(reHbe, mClamped);
+  const dpDW = (fDarcy > 0 && D > 0)
+    ? fDarcy * (params.tubeLength / D) * (params.density * V * V / 2)
+    : 0;
+
+  return { V, mach, gammaAppw, m, mClamped, reHbe, fDarcy, dpDW };
+}
+
+function dpEffective(params, data, diag) {
+  if (diag.reHbe <= 2100) return data.G * params.tubeLength;
+  return diag.dpDW;
 }
 
 function estimateGForQ(targetQ, params) {
@@ -847,15 +977,15 @@ function estimateGForQ(targetQ, params) {
   return thresholdG + flowG;
 }
 
-function solveForG(targetQ, params, tolerance = 1e-6) {
+function solveForG(targetQ, params, tolerance = 1e-6, hint = null) {
   if (!Number.isFinite(targetQ) || targetQ <= 0) return 0;
   const hasYield = params.model === 'bingham' || params.model === 'herschelBulkley';
   const minG = hasYield && params.tau0 > 0 ? (2 * params.tau0) / params.R : 0;
   if (flowRateAtG(minG, params) >= targetQ) return minG;
 
   let lo = minG;
-  const hint = Number(params.G) || defaults.pressureGradient;
-  let hi = Math.max(minG + 1, estimateGForQ(targetQ, params), hint);
+  const start = Number.isFinite(hint) ? hint : (Number(params.G) || defaults.pressureGradient);
+  let hi = Math.max(minG + 1, estimateGForQ(targetQ, params), start);
   for (let safety = 0; safety < 30; safety += 1) {
     const qHi = flowRateAtG(hi, params);
     if (qHi >= targetQ || hi > 1e12) break;
@@ -896,12 +1026,27 @@ function estimateFlowRateForPressure(targetP, baseParams, subsections) {
   return (Math.PI * n / (3 * n + 1)) * Math.pow(effectiveP / (2 * K * sum), 1 / n);
 }
 
-function totalPressureForQ(Q, baseParams, subsections, tolerance = 1e-3) {
+function pressureDropForQ(Q, baseParams, s, tolerance = 1e-5, hint = null) {
+  const R = Math.max(1e-6, s.r);
+  const dx = s.dx;
+  const params = { ...baseParams, R, tubeLength: dx };
+  const G = solveForG(Q, params, tolerance, hint);
+  const V = Q / (Math.PI * R * R);
+  const data = { G, meanVelocity: V };
+  const d = computeDiagnostics(data, params);
+  return { dp: dpEffective(params, data, d), G, reHbe: d.reHbe, mach: d.mach };
+}
+
+function totalPressureForQ(Q, baseParams, subsections, tolerance = 1e-5, hintArray = null) {
   let total = 0;
+  let lastG = baseParams.pressureGradient;
   for (let i = 0; i < subsections.length; i += 1) {
     const s = subsections[i];
-    const G = solveForG(Q, { ...baseParams, R: s.r, tubeLength: s.dx, G: baseParams.pressureGradient }, tolerance);
-    total += G * s.dx;
+    const hint = hintArray && Number.isFinite(hintArray[i]) ? hintArray[i] : lastG;
+    const r = pressureDropForQ(Q, baseParams, s, tolerance, hint);
+    total += r.dp;
+    lastG = r.G;
+    if (hintArray) hintArray[i] = r.G;
   }
   return total;
 }
@@ -911,14 +1056,15 @@ function solveGlobalQ(targetP, baseParams, subsections) {
   const thresholdP = thresholdPressure(baseParams, subsections);
   if (targetP <= thresholdP) return 0;
   const Qest = estimateFlowRateForPressure(targetP, baseParams, subsections);
+  const hintArray = new Array(subsections.length);
   let lo = 0;
   let pLo = thresholdP;
   let hi = Math.max(Qest * 2, 1e-12);
-  let pHi = totalPressureForQ(hi, baseParams, subsections, 1e-3);
+  let pHi = totalPressureForQ(hi, baseParams, subsections, 1e-5, hintArray);
   for (let safety = 0; safety < 30; safety += 1) {
     if (pHi >= targetP || !Number.isFinite(pHi) || hi > 1e12) break;
     hi *= 2;
-    pHi = totalPressureForQ(hi, baseParams, subsections, 1e-3);
+    pHi = totalPressureForQ(hi, baseParams, subsections, 1e-5, hintArray);
   }
   if (!Number.isFinite(pHi) || pHi < targetP) return hi;
   let fLo = pLo - targetP;
@@ -926,10 +1072,10 @@ function solveGlobalQ(targetP, baseParams, subsections) {
   let Q = hi;
   for (let i = 0; i < 40; i += 1) {
     const newQ = hi - fHi * (hi - lo) / (fHi - fLo);
-    const newP = totalPressureForQ(newQ, baseParams, subsections, 1e-3);
+    const newP = totalPressureForQ(newQ, baseParams, subsections, 1e-5, hintArray);
     const newF = newP - targetP;
     Q = newQ;
-    if (Math.abs(newF) < 1e-4 * Math.max(1, targetP) || Math.abs(hi - lo) < 1e-7 * hi) break;
+    if (Math.abs(newF) < 1e-5 * Math.max(1, targetP) || Math.abs(hi - lo) < 1e-7 * hi) break;
     if (newF * fHi < 0) {
       lo = hi;
       fLo = fHi;
@@ -998,18 +1144,9 @@ function calculate(params) {
     samples.push({ x, r, velocity, stress, shearRate });
   }
 
-  let areaIntegral = 0;
-  for (let i = 1; i < samples.length; i += 1) {
-    const p0 = samples[i - 1];
-    const p1 = samples[i];
-    areaIntegral += 0.5 * (p0.velocity * p0.r + p1.velocity * p1.r) * (p1.r - p0.r);
-  }
-  const flowRate = 2 * Math.PI * areaIntegral;
+  const flowRate = flowRateAnalytic(tauW, params);
   const meanVelocity = flowRate / (Math.PI * R * R);
-  const D = 2 * R;
-  const wallShearRate = meanVelocity > 0
-    ? ((3 * modelN + 1) / (4 * modelN)) * (8 * meanVelocity / D)
-    : 0;
+  const wallShearRate = flowing ? samples[samples.length - 1].shearRate : 0;
 
   return { params, G, tauW, tau0, flowing, Pl, Rp, samples, maxVelocity, meanVelocity, flowRate, wallShearRate };
 }
@@ -1020,9 +1157,7 @@ function calculate(params) {
 //   1/sqrt(f_D) = (2/m^0.75) * log10[ Re * (f_D/4)^(1 - m/2) ] - 0.2/m^1.2
 // is solved by fixed-point iteration on y = 1/sqrt(f_D). For m = 1 the
 // expression reduces to the Prandtl–Nikuradse smooth-pipe equation.
-function darcyFrictionFactor(re, m) {
-  if (!Number.isFinite(re) || re <= 0) return 0;
-  if (re <= 2100) return 64 / re;
+function darcyFrictionTurbulent(re, m) {
   const mClamped = Math.min(Math.max(m, 0.1), 1);
   const a = 2 / Math.pow(mClamped, 0.75);
   const b = 0.2 / Math.pow(mClamped, 1.2);
@@ -1037,6 +1172,15 @@ function darcyFrictionFactor(re, m) {
   }
   const f = 1 / (y * y);
   return Number.isFinite(f) && f > 0 ? f : 0;
+}
+
+function darcyFrictionFactor(re, m) {
+  if (!Number.isFinite(re) || re <= 0) return 0;
+  const fLam = 64 / re;
+  if (re <= 2100) return fLam;
+  if (re >= 3000) return darcyFrictionTurbulent(re, m);
+  const w = (re - 2100) / 900;
+  return (1 - w) * fLam + w * darcyFrictionTurbulent(re, m);
 }
 
 function formatValue(value, digits = 3) {
@@ -1062,8 +1206,10 @@ function updateRange(input) {
   const min = Number(input.min);
   const max = Number(input.max);
   const value = Number(input.value);
-  const progress = (value - min) / (max - min) * 100;
-  input.style.setProperty('--range-progress', `${progress}%`);
+  const denom = max - min;
+  if (!Number.isFinite(min) || !Number.isFinite(max) || !Number.isFinite(value) || denom === 0) return;
+  const progress = (value - min) / denom * 100;
+  input.style.setProperty('--range-progress', `${Math.max(0, Math.min(100, progress))}%`);
 }
 
 function setInputValue(input, value) {
@@ -1091,6 +1237,32 @@ function syncSliderAndNumber(numberInput, slider, isLog) {
     if (!Number.isFinite(v)) return;
     numberInput.value = String(isLog ? 10 ** v : v);
     markResultsDirty();
+  });
+}
+
+function clampOnBlur(input, isLog = false) {
+  if (!input) return;
+  input.addEventListener('blur', () => {
+    const raw = Number(input.value);
+    if (!Number.isFinite(raw) || input.value === '') return;
+    const min = Number(input.min);
+    const max = input.max === '' ? Infinity : Number(input.max);
+    let v = raw;
+    if (isLog) {
+      if (v <= 0 || min <= 0 || max <= 0) return;
+      const logMin = Math.log10(min);
+      const logMax = Math.log10(max);
+      v = 10 ** Math.max(logMin, Math.min(logMax, Math.log10(v)));
+    } else {
+      if (Number.isFinite(min) && v < min) v = min;
+      if (Number.isFinite(max) && v > max) v = max;
+    }
+    if (v !== raw) {
+      input.value = String(v);
+      input.classList.add('invalid');
+      setTimeout(() => input.classList.remove('invalid'), 400);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
   });
 }
 
@@ -1150,30 +1322,9 @@ function updateControls(params, mode = {}) {
 
 function updateMetrics(data, mode = {}) {
   const params = data.params;
-  const V = data.meanVelocity;
-  const D = 2 * params.R;
-  const n = params.model === 'powerLaw' || params.model === 'herschelBulkley' ? params.n : 1;
-  const K = params.model === 'newtonian' || params.model === 'bingham' ? params.mu : params.H;
-  const tau0 = params.model === 'bingham' || params.model === 'herschelBulkley' ? params.tau0 : 0;
-  const factor = n > 0 ? (3 * n + 1) / (4 * n) : 1;
-  const shearRateWall = V > 0 ? 8 * V / D : 0;
-  const denom = tau0 + K * (factor ** n) * (shearRateWall ** n);
-  const re = V > 0 && denom > 0 ? (8 * params.density * V * V * factor) / denom : 0;
-  const mach = params.soundSpeed > 0 ? V / params.soundSpeed : 0;
-
-  // Madlener et al. (2009) HBE generalized Reynolds with eta_infinity = 0.
-  const gammaAppw = V > 0 ? 8 * V / D : 0;
-  const tauW = data.tauW;
-  const mLocal = (V > 0 && tauW > 0) ? (n * K * (gammaAppw ** n)) / tauW : (n > 0 ? n : 1);
-  const mClamped = Number.isFinite(mLocal) && mLocal > 0 ? mLocal : (n > 0 ? n : 1);
-  const mFactor = (3 * mClamped + 1) / (4 * mClamped);
-  let reHbe = 0;
-  if (V > 0 && D > 0) {
-    const denomHbe = (tau0 / 8) * ((D / V) ** n) + K * (mFactor ** n) * (8 ** (n - 1));
-    if (denomHbe > 0) reHbe = (params.density * (V ** (2 - n)) * (D ** n)) / denomHbe;
-  }
-  const fDarcy = darcyFrictionFactor(reHbe, mClamped);
-  const darcyWeisbachDp = (fDarcy > 0 && D > 0) ? fDarcy * (params.tubeLength / D) * (params.density * V * V / 2) : 0;
+  const d = computeDiagnostics(data, params);
+  const dp = dpEffective(params, data, d);
+  const dpMethod = d.reHbe <= 2100 ? 'laminar exato' : 'Dodge–Metzner turbulento';
 
   els.maxVelocity.textContent = formatValue(fromSI(data.maxVelocity, 'velocity'));
   els.maxVelocityUnit.textContent = getUnitLabel('velocity');
@@ -1194,18 +1345,18 @@ function updateMetrics(data, mode = {}) {
   }
   els.plugArea.textContent = data.tau0 > 0 ? `${formatValue(data.Pl * data.Pl * 100, 1)} %` : '0 %';
   els.wallShearRate.textContent = `${formatValue(data.wallShearRate, 3)} s⁻¹`;
-  els.pressureDifferenceOutput.textContent = formatValue(fromSI(mode.pressureDifference ?? (params.G * params.tubeLength), 'pressure'), 3);
-  els.reynoldsNumber.textContent = formatValue(re, 2);
-  els.localGradient.textContent = formatValue(mClamped, 4);
-  els.reynoldsHbeNumber.textContent = formatValue(reHbe, 2);
-  els.darcyFriction.textContent = formatValue(fDarcy, 5);
-  els.darcyWeisbachPressure.textContent = formatValue(fromSI(darcyWeisbachDp, 'pressure'), 3);
-  els.machNumber.textContent = formatValue(mach, 3);
+  els.pressureDifferenceOutput.textContent = formatValue(fromSI(dp, 'pressure'), 3);
+  els.localGradient.textContent = formatValue(d.m, 4);
+  els.reynoldsHbeNumber.textContent = formatValue(d.reHbe, 2);
+  els.darcyFriction.textContent = formatValue(d.fDarcy, 5);
+  els.darcyWeisbachPressure.textContent = formatValue(fromSI(dp, 'pressure'), 3);
+  if (els.dpMethod) els.dpMethod.textContent = `(${dpMethod})`;
+  els.machNumber.textContent = formatValue(d.mach, 3);
   els.legendMax.innerHTML = `<span class="math">U<sub>max</sub></span> = ${formatValue(fromSI(data.maxVelocity, 'velocity'))} ${getUnitLabel('velocity')}`;
 
   const flowing = data.flowing && data.maxVelocity > 0;
-  const turbulent = reHbe > 2100;
-  const supersonic = mach > 1;
+  const turbulent = d.reHbe > 2100;
+  const supersonic = d.mach > 1;
   els.flowState.classList.toggle('stopped', !flowing);
   els.flowState.classList.toggle('turbulent', flowing && turbulent);
   els.flowState.classList.toggle('supersonic', flowing && supersonic);
@@ -1236,11 +1387,16 @@ function refreshDisplays() {
   }
 }
 
+let typesetTimeout;
 function typesetEquations() {
   if (!window.MathJax || !window.MathJax.typesetPromise) return;
-  const nodes = [els.equation, els.wallStressEquation, els.flowRateEquation, els.reynoldsEquation, els.localGradientEquation, els.reynoldsHbeEquation, els.darcyFrictionEquation, els.darcyWeisbachEquation, els.equationVars];
+  const nodes = [els.equation, els.wallStressEquation, els.flowRateEquation, els.localGradientEquation, els.reynoldsHbeEquation, els.darcyFrictionEquation, els.darcyWeisbachEquation, els.equationVars];
   if (window.MathJax.typesetClear) window.MathJax.typesetClear(nodes);
   window.MathJax.typesetPromise(nodes).catch(() => {});
+}
+function debouncedTypesetEquations() {
+  clearTimeout(typesetTimeout);
+  typesetTimeout = setTimeout(typesetEquations, 150);
 }
 
 function updateEquation(data) {
@@ -1265,17 +1421,21 @@ function updateEquation(data) {
     els.flowRateEquation.textContent = String.raw`\[Q=\pi R^3\left(\frac{\tau_w}{H}\right)^{1/n}\left[\frac{(1-\mathrm{Pl})^{1/n+3}}{1/n+3}+\frac{2\mathrm{Pl}(1-\mathrm{Pl})^{1/n+2}}{1/n+2}+\frac{\mathrm{Pl}^2(1-\mathrm{Pl})^{1/n+1}}{1/n+1}\right]\]`;
     els.equationVars.textContent = String.raw`\(H=${formatValue(H, 4)}\ \mathrm{Pa\,s^n},\quad n=${formatValue(n, 2)},\quad \tau_0=${formatValue(data.tau0, 3)}\ \mathrm{Pa},\quad \mathrm{Pl}=${formatValue(data.Pl, 4)},\quad R_p=${formatValue(data.Rp, 5)}\ \mathrm{m},\quad Q=${formatValue(data.flowRate, 4)}\ \mathrm{m^3\,s^{-1}}\)`;
   }
-  els.reynoldsEquation.textContent = String.raw`\[\mathrm{Re}=\frac{8\rho V^2\left(\frac{3n+1}{4n}\right)}{\tau_0+K\left(\frac{3n+1}{4n}\right)^n\left(\frac{8V}{D}\right)^n}\]`;
   els.localGradientEquation.textContent = String.raw`\[\dot{\gamma}_{\mathrm{appw}}=\frac{8\bar{u}}{D},\qquad m=\frac{nK\left(\frac{8\bar{u}}{D}\right)^n+\eta_\infty\left(\frac{8\bar{u}}{D}\right)}{\tau_0+K\left(\frac{8\bar{u}}{D}\right)^n+\eta_\infty\left(\frac{8\bar{u}}{D}\right)}\quad\Rightarrow\quad \eta_\infty=0:\ m=\frac{nK\left(\frac{8\bar{u}}{D}\right)^n}{\tau_0+K\left(\frac{8\bar{u}}{D}\right)^n}\]`;
   els.reynoldsHbeEquation.textContent = String.raw`\[\mathrm{Re}_{\mathrm{gen\,HBE}}=\frac{\rho\bar{u}^{2-n}D^n}{\frac{\tau_0}{8}\left(\frac{D}{\bar{u}}\right)^n+K\left(\frac{3m+1}{4m}\right)^n8^{n-1}+\eta_\infty\left(\frac{3m+1}{4m}\right)\left(\frac{D}{\bar{u}}\right)^{n-1}}\quad(\eta_\infty=0)\]`;
-  els.darcyFrictionEquation.textContent = String.raw`\[f_{\mathrm{Darcy}}=\begin{cases}\displaystyle\frac{64}{\mathrm{Re}_{\mathrm{gen\,HBE}}},&\mathrm{Re}_{\mathrm{gen\,HBE}}\le 2100\quad(\text{laminar})\\[6pt]\displaystyle\frac{1}{\sqrt{f_{\mathrm{Darcy}}}}=\frac{2}{m^{0{,}75}}\log_{10}\!\left[\mathrm{Re}_{\mathrm{gen\,HBE}}\left(\frac{f_{\mathrm{Darcy}}}{4}\right)^{1-m/2}\right]-\frac{0{,}2}{m^{1{,}2}},&\mathrm{Re}_{\mathrm{gen\,HBE}}>2100\quad(\text{Dodge--Metzner})\end{cases}\]`;
+  els.darcyFrictionEquation.textContent = String.raw`\[f_{\mathrm{Darcy}}=\begin{cases}\displaystyle\frac{64}{\mathrm{Re}_{\mathrm{gen\,HBE}}},&\mathrm{Re}_{\mathrm{gen\,HBE}}\le 2100\quad(\text{laminar})\\[6pt]\displaystyle(1-w)\frac{64}{\mathrm{Re}_{\mathrm{gen\,HBE}}}+w\,f_{\mathrm{DM}},&2100<\mathrm{Re}_{\mathrm{gen\,HBE}}<3000,\ w=\frac{\mathrm{Re}_{\mathrm{gen\,HBE}}-2100}{900}\\[6pt]\displaystyle\frac{1}{\sqrt{f_{\mathrm{Darcy}}}}=\frac{2}{m^{0{,}75}}\log_{10}\!\left[\mathrm{Re}_{\mathrm{gen\,HBE}}\left(\frac{f_{\mathrm{Darcy}}}{4}\right)^{1-m/2}\right]-\frac{0{,}2}{m^{1{,}2}},&\mathrm{Re}_{\mathrm{gen\,HBE}}\ge 3000\quad(\text{Dodge--Metzner})\end{cases}\]`;
   els.darcyWeisbachEquation.textContent = String.raw`\[\Delta p_{\mathrm{DW}}=f_{\mathrm{Darcy}}\,\frac{L}{D}\,\frac{\rho\bar{u}^2}{2}\]`;
-  typesetEquations();
+  debouncedTypesetEquations();
 }
 
 function setupCanvas(canvas) {
-  const rect = canvas.getBoundingClientRect();
   const ratio = Math.min(2, window.devicePixelRatio || 1);
+  if (canvas._rheoRatio !== ratio) canvas._rheoRect = null;
+  if (!canvas._rheoRect) {
+    canvas._rheoRect = canvas.getBoundingClientRect();
+    canvas._rheoRatio = ratio;
+  }
+  const rect = canvas._rheoRect;
   const width = Math.max(1, Math.round(rect.width));
   const height = Math.max(1, Math.round(rect.height));
   if (canvas.width !== width * ratio || canvas.height !== height * ratio) {
@@ -1449,7 +1609,7 @@ function animate(timestamp) {
   const delta = Math.min(40, timestamp - animationTime || 16);
   animationTime = timestamp;
   if (els.ductMode.value === 'nonHomogeneous') {
-    drawDuctFlow(delta);
+    if (nhView === 'flow') drawDuctFlow(delta);
   } else {
     drawFlow(delta);
   }
@@ -1488,10 +1648,11 @@ function refresh() {
     }
   }
 
-  const pressureDifference = params.G * params.tubeLength;
-  updateControls(params, { flowMode, pressureSpecMode, pressureDifference });
   result = calculate(params);
-  updateMetrics(result, { flowMode, pressureSpecMode, pressureDifference });
+  const diag = computeDiagnostics(result, result.params);
+  const pressureDifference = dpEffective(result.params, result, diag);
+  updateControls(params, { flowMode, pressureSpecMode, pressureDifference });
+  updateMetrics(result, { flowMode, pressureSpecMode });
   updateEquation(result);
   if (els.ductMode.value === 'nonHomogeneous') {
     if (nhGeometry) {
@@ -1505,6 +1666,21 @@ function refresh() {
 }
 
 function exportCsv() {
+  if (els.ductMode.value === 'nonHomogeneous') {
+    if (!nhGeometry || !nhGeometry.sectionResults) return;
+    const rows = ['x_m,dx_m,r_m,velocity_m_per_s,re_hbe,dp_Pa'];
+    nhGeometry.sectionResults.forEach((sr, i) => {
+      const s = nhGeometry.subsections[i];
+      rows.push([(s ? s.xCenter : ''), sr.dx, sr.data.params.R, sr.data.meanVelocity, sr.reHbe, sr.dp].join(','));
+    });
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `rheoflow-nh-${nhGeometry.sectionResults.length}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    return;
+  }
   if (!result) return;
   const rows = ['r_m,r_over_R,velocity_m_per_s,shear_stress_Pa,shear_rate_per_s'];
   result.samples.forEach((p) => rows.push([p.r, p.x, p.velocity, p.stress, p.shearRate].join(',')));
@@ -1519,9 +1695,11 @@ function exportCsv() {
 function reset() {
   units.pressure = 'Pa';
   units.length = 'm';
+  units.velocity = 'm/s';
   units.flowRate = 'm3/d';
   units.density = 'kg/m3';
   updateUnitSelects();
+  const md = getModelDefaults(defaults.model);
   els.model.value = defaults.model;
   els.flowMode.value = defaults.flowMode;
   els.pressureSpecMode.value = defaults.pressureSpecMode;
@@ -1532,14 +1710,14 @@ function reset() {
   els.flowRateInput.value = fromSI(defaults.flowRate, 'flowRate');
   els.density.value = fromSI(defaults.density, 'density');
   els.soundSpeed.value = fromSI(defaults.soundSpeed, 'velocity');
-  els.viscosity.value = Math.log10(defaults.viscosity);
-  els.viscosityNumber.value = defaults.viscosity;
-  els.consistency.value = Math.log10(defaults.consistency);
-  els.consistencyNumber.value = defaults.consistency;
-  els.flowIndex.value = defaults.flowIndex;
-  els.flowIndexNumber.value = defaults.flowIndex;
-  els.yieldStress.value = defaults.yieldStress;
-  els.yieldStressNumber.value = defaults.yieldStress;
+  els.viscosity.value = Math.log10(md.viscosity);
+  els.viscosityNumber.value = md.viscosity;
+  els.consistency.value = Math.log10(md.consistency);
+  els.consistencyNumber.value = md.consistency;
+  els.flowIndex.value = md.flowIndex;
+  els.flowIndexNumber.value = md.flowIndex;
+  els.yieldStress.value = md.yieldStress;
+  els.yieldStressNumber.value = md.yieldStress;
   [els.showVelocity, els.showStress, els.showPlug, els.showParticles].forEach((input) => { input.checked = true; });
   [els.viscosity, els.consistency, els.flowIndex, els.yieldStress].forEach(updateRange);
   els.ductMode.value = 'homogeneous';
@@ -1619,7 +1797,7 @@ function updateUnitSelects() {
 }
 
 function applyUnits(oldUnits = {}) {
-  const newUnits = { pressure: units.pressure, length: units.length, flowRate: units.flowRate, density: units.density };
+  const newUnits = { pressure: units.pressure, length: units.length, velocity: units.velocity, flowRate: units.flowRate, density: units.density };
   Object.assign(units, oldUnits);
   const toSIInput = (input, dimension) => {
     if (!input) return undefined;
@@ -1661,7 +1839,7 @@ function setupUnits() {
     select.addEventListener('change', () => {
       const dimension = select.dataset.dimension;
       if (!dimension || !units[dimension]) return;
-      const oldUnits = { pressure: units.pressure, length: units.length, flowRate: units.flowRate, density: units.density };
+      const oldUnits = { pressure: units.pressure, length: units.length, velocity: units.velocity, flowRate: units.flowRate, density: units.density };
       units[dimension] = select.value;
       applyUnits(oldUnits);
     });
@@ -1691,13 +1869,20 @@ function setupAccessibility() {
 }
 
 syncSliderAndNumber(els.viscosityNumber, els.viscosity, true);
+clampOnBlur(els.viscosityNumber, true);
 syncSliderAndNumber(els.consistencyNumber, els.consistency, true);
+clampOnBlur(els.consistencyNumber, true);
 syncSliderAndNumber(els.flowIndexNumber, els.flowIndex, false);
+clampOnBlur(els.flowIndexNumber, false);
 syncSliderAndNumber(els.yieldStressNumber, els.yieldStress, false);
+clampOnBlur(els.yieldStressNumber, false);
+
+[els.radius, els.tubeLength, els.pressureGradientInput, els.pressureDifference, els.flowRateInput, els.density, els.soundSpeed].forEach((input) => clampOnBlur(input, false));
 
 $$('input, select:not(.unit-select)').forEach((input) => input.addEventListener('input', refresh));
 window.addEventListener('resize', () => {
-  if (els.ductMode.value === 'nonHomogeneous') { drawDuctProfile(); drawDuctFlow(); }
+  [els.flowCanvas, els.profileCanvas, els.ductProfileCanvas, els.ductFlowCanvas].forEach((c) => { if (c) c._rheoRect = null; });
+  if (els.ductMode.value === 'nonHomogeneous') { if (nhView === 'profile') drawDuctProfile(); else drawDuctFlow(0); }
   else { drawProfileChart(); drawFlow(); }
 });
 els.profileCanvas.addEventListener('pointermove', handleProfilePointer);

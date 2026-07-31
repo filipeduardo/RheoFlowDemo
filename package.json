@@ -1,0 +1,11 @@
+{
+  "name": "rheoflow-demo",
+  "version": "1.0.0",
+  "description": "Educational simulator for fully-developed flow of generalized Newtonian fluids in circular ducts.",
+  "scripts": {
+    "verify": "node tests/verify.js"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.0"
+  }
+}

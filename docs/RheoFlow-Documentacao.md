@@ -32,10 +32,10 @@ Todo o cálculo interno usa SI. O objeto `defaults` armazena os valores-base em 
 | `model` | `'herschelBulkley'` | Modelo reológico padrão. |
 | `radius` | `0,05` m | Raio padrão do duto `R`. |
 | `pressureGradient` | `12000` Pa/m | Magnitude padrão do gradiente de pressão `G = -dp/dz`. |
-| `viscosity` | `0,1` Pa·s | Viscosidade padrão `μ` para Newtoniano/Bingham. |
-| `consistency` | `0,5012` Pa·sⁿ | Índice de consistência padrão `H`. |
-| `flowIndex` | `0,65` | Índice de escoamento padrão `n`. |
-| `yieldStress` | `45` Pa | Tensão limite padrão `τ₀`. |
+| `viscosity` | `0,001` Pa·s | Viscosidade padrão `μ` para Newtoniano/Bingham. |
+| `consistency` | `0,001` Pa·sⁿ | Índice de consistência padrão `H`. |
+| `flowIndex` | `0,6` | Índice de escoamento padrão `n`. |
+| `yieldStress` | `0,6` Pa | Tensão limite padrão `τ₀` (0 para Newtoniano/Lei de Potência; 0,5 para Bingham). |
 | `flowMode` | `'pressureGradient'` | Modo padrão de especificação do escoamento. |
 | `pressureSpecMode` | `'gradient'` | Forma padrão do gradiente de pressão (gradiente direto). |
 | `pressureDifference` | `6000` Pa | Diferencial de pressão padrão `Δp`. |
@@ -50,6 +50,7 @@ Todo o cálculo interno usa SI. O objeto `defaults` armazena os valores-base em 
 const units = {
   pressure: 'Pa',
   length: 'm',
+  velocity: 'm/s',
   flowRate: 'm3/d',
   density: 'kg/m3'
 };
@@ -66,6 +67,7 @@ Essas quatro dimensões-base impulsionam toda a conversão. `pressureGradient` e
 |-----------|---------|--------------------------------------|-------------|
 | `pressure` | Pa, kPa, psi | `1`, `1000`, `6894,757293168` | — |
 | `length` | m, ft, in | `1`, `0,3048`, `0,0254` | — |
+| `velocity` | m/s, ft/s, in/s | `1`, `0,3048`, `0,0254` | Independent of `length`; used for velocity labels. |
 | `flowRate` | m³/d, bbl/d, MMSCFD, GPM | `1/86400`, `0,158987294928/86400`, `1e6*0,028316846592/86400`, `0,003785411784/60` | Converte vazão volumétrica para m³/s. |
 | `density` | kg/m³, ppg, °API | `1`, `119,826427`, `141,5/(API+131,5)*1000` | °API é uma conversão não linear; a inversa usa `141,5/(ρ/1000) - 131,5`. |
 
@@ -75,7 +77,7 @@ Essas quatro dimensões-base impulsionam toda a conversão. `pressureGradient` e
 - `fromSI(value, dimension, unitValue)` — converte um valor em SI para a unidade exibida.
 - `getUnitLabel(dimension, unitValue)` — retorna a string do rótulo exibida ao lado de um valor.
 
-Para `pressureGradient` e `velocity`, as funções combinam as unidades atuais de `pressure`/`length`, de modo que alterar a unidade de comprimento atualiza automaticamente os rótulos de velocidade (`m/s → ft/s → in/s`) e de gradiente de pressão (`Pa/m → Pa/ft` etc.).
+`pressureGradient` continua sendo derivado de `pressure` e `length`. A dimensão `velocity` é independente: seus fatores de conversão seguem as mesmas razões de `length`, mas `units.velocity` controla os rótulos de velocidade sem afetar as unidades de comprimento (e vice-versa).
 
 ### 2.5 Leitura e escrita das entradas
 
@@ -114,9 +116,9 @@ Assim, o estado físico é preservado; apenas os números e rótulos exibidos mu
 | `flowRate` | `#flowRateInput` | m³/s | `toSI(..., 'flowRate')`. |
 | `density` | `#density` | kg/m³ | `toSI(..., 'density')`; recua para `defaults.density` se inválido. |
 | `soundSpeed` | `#soundSpeed` | m/s | `toSI(..., 'velocity')`. |
-| `mu` | `#viscosityNumber` | Pa·s | Número positivo direto. |
-| `H` | `#consistencyNumber` | Pa·sⁿ | Número positivo direto. |
-| `n` | `#flowIndexNumber` | — | Limitado a `≥ 0,2`. |
+| `mu` | `#viscosityNumber` | Pa·s | Limitado a `[0,001; 10]`. |
+| `H` | `#consistencyNumber` | Pa·sⁿ | Limitado a `[0,001; 100]`. |
+| `n` | `#flowIndexNumber` | — | Limitado a `[0,2; 1,8]`. |
 | `tau0` | `#yieldStressNumber` | Pa | `Math.max(0, valor)`. |
 
 ### 3.1 Entradas reológicas por modelo
@@ -199,8 +201,8 @@ R_p = Pl * R                          # raio do plugue
 | `samples` | 201 pontos radiais `{x, r, velocity, stress, shearRate}`. |
 | `maxVelocity` | Velocidade máxima (no eixo para casos totalmente escoantes). |
 | `meanVelocity` | `Q / (π R²)`, velocidade média volumétrica. |
-| `flowRate` | `Q` calculada por integração trapezoidal de `U_z(r) * r`. |
-| `wallShearRate` | `((3n+1)/(4n)) * (8 V / D)`, taxa de cisalhamento aparente na parede. |
+| `flowRate` | `Q` calculada pela integral analítica de Herschel–Bulkley (forma fechada). |
+| `wallShearRate` | Valor exato no contorno: `(τ_w - τ₀) / K` elevado a `1/n` para HB/PL, `(τ_w - τ₀) / μ` para Bingham, `τ_w / μ` para Newtoniano. |
 
 ### 5.2 Perfis de velocidade
 
@@ -308,12 +310,11 @@ Isso garante consistência entre o perfil, `V` e todos os números de Reynolds/M
 | `Pl` | `Pl` | `τ₀ / τ_w` (0 se `τ₀ = 0`). |
 | `R_p` | `R_p` | `Pl * R` (exibido apenas se `τ₀ > 0`). |
 | `A_nc` | `A_nc` | `Pl² * 100` como porcentagem. |
-| `γ̇_w` | `γ̇_w` | `((3n+1)/(4n)) * (8 V / D)`. |
-| `Re` | `Re` | `8 ρ V² ((3n+1)/(4n)) / [τ₀ + K ((3n+1)/(4n))^n (8V/D)^n]` |
-| `m` | `m` | `n K γ̇_w^n / τ_w` (com `η_∞ = 0`). |
+| `γ̇_w` | `γ̇_w` | Valor exato no contorno conforme o modelo. |
+| `m` | `m` | `n K γ̇_app^n / (τ₀ + K γ̇_app^n)` com `γ̇_app = 8V/D`. |
 | `Re_HBE` | `Re_HBE` | Reynolds HBE generalizado de Madlener et al. (2009). |
-| `f_D` | `f_D` | `64/Re` laminar; Dodge–Metzner turbulento. |
-| `Δp_DW` | `Δp_DW` | `f_D (L/D) (ρ V² / 2)`. |
+| `f_D` | `f_D` | `64/Re_HBE` laminar; Dodge–Metzner turbulento; transição suavizada por `w=(Re_HBE-2100)/900` em `[2100,3000]`. |
+| `Δp_DW` | `Δp_DW` | `f_D (L/D) (ρ V² / 2)`; torna-se o diferencial ativo quando `Re_HBE > 2100`. |
 | `Ma` | `Ma` | `V / c`. |
 
 Nas fórmulas acima:
@@ -365,13 +366,13 @@ Estados possíveis: `Sem escoamento`, `Escoando`, `Turbulento`, `Supersônico`, 
 `#profileMode` escolhe `linear` ou `cúbico`:
 
 - **Linear**: `r(x) = r_i + t (r_{i+1} - r_i)` com `t = (x - x_i) / (x_{i+1} - x_i)`.
-- **Cúbica**: spline cúbico natural construído com algoritmo tridiagonal. Recua para linear se houver menos de 3 pontos.
+- **Cúbica**: PCHIP (Fritsch–Carlson) monótono; evita oscilações e raios negativos. Recua para linear se houver menos de 3 pontos.
 
 `radiusAt(points, x, mode)` retorna `max(1e-6, raio_interpolado)` para evitar divisão por zero em seções extremamente estreitas.
 
 ### 7.3 Subdivisão
 
-`buildSubsections(points, subdivisions, mode)` cria `N` subseções cilíndricas de raio constante **por trecho original**, onde `N` é limitado para que o número total de subseções não exceda 10.000. Cada subseção armazena:
+`buildSubsections(points, subdivisions, mode)` cria `N` subseções cilíndricas de raio constante **por trecho original**, onde `N` é limitado a 2.000 subseções no total; o valor de entrada é ajustado automaticamente quando necessário. Cada subseção armazena:
 
 - `xLeft`, `xRight`, `xCenter`
 - `r` = `radiusAt(points, xCenter, mode)`
@@ -404,7 +405,7 @@ O valor exibido `Seções N` é o número total de subseções.
 1. Calcula `thresholdPressure = Σ (2 τ₀ / r_i) dx_i`. Se `targetP ≤ thresholdPressure`, o escoamento está abaixo do limiar de escoamento → `Q = 0`.
 2. Estima `Q` analiticamente com `estimateFlowRateForPressure`.
 3. Delimita `Q` dobrando até que `totalPressureForQ(hi) ≥ targetP`.
-4. Refina pelo método da secante (40 iterações, tolerância `1e-4 * targetP`).
+4. Refina por regula falsi (Illinois, 40 iterações, tolerância `1e-5 * targetP`); warm-start com `G` da subseção anterior.
 
 `totalPressureForQ(Q, ...)` soma `G_i(Q) dx_i` para todas as subseções, onde cada `G_i` é encontrado por `solveForG`.
 

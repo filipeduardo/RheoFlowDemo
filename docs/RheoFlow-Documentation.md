@@ -33,9 +33,9 @@ All internal computation uses SI. The `defaults` object stores the fallback SI v
 | `radius` | `0.05` m | Default duct radius `R`. |
 | `pressureGradient` | `12000` Pa/m | Default pressure-gradient magnitude `G = -dp/dz`. |
 | `viscosity` | `0.1` Pa·s | Default Newtonian/Bingham viscosity `μ`. |
-| `consistency` | `0.5012` Pa·sⁿ | Default consistency index `H`. |
+| `consistency` | `0.001` Pa·sⁿ | Default consistency index `H`. |
 | `flowIndex` | `0.65` | Default power-law index `n`. |
-| `yieldStress` | `45` Pa | Default yield stress `τ₀`. |
+| `yieldStress` | `0.6` Pa | Default yield stress `τ₀` (0 for Newtonian/Power-Law; 0.5 for Bingham). |
 | `flowMode` | `'pressureGradient'` | Default flow-specification mode. |
 | `pressureSpecMode` | `'gradient'` | Default pressure-gradient form (direct gradient). |
 | `pressureDifference` | `6000` Pa | Default differential pressure `Δp`. |
@@ -50,6 +50,7 @@ All internal computation uses SI. The `defaults` object stores the fallback SI v
 const units = {
   pressure: 'Pa',
   length: 'm',
+  velocity: 'm/s',
   flowRate: 'm3/d',
   density: 'kg/m3'
 };
@@ -66,6 +67,7 @@ These four base dimensions drive every conversion. `pressureGradient` and `veloc
 |-----------|---------|--------------------------------|-------|
 | `pressure` | Pa, kPa, psi | `1`, `1000`, `6894.757293168` | — |
 | `length` | m, ft, in | `1`, `0.3048`, `0.0254` | — |
+| `velocity` | m/s, ft/s, in/s | `1`, `0.3048`, `0.0254` | Independent of `length`; used for velocity labels. |
 | `flowRate` | m³/d, bbl/d, MMSCFD, GPM | `1/86400`, `0.158987294928/86400`, `1e6*0.028316846592/86400`, `0.003785411784/60` | Converts volumetric rate to m³/s. |
 | `density` | kg/m³, ppg, °API | `1`, `119.826427`, `141.5/(API+131.5)*1000` | °API is a non-linear conversion; reverse uses `141.5/(ρ/1000) - 131.5`. |
 
@@ -114,9 +116,9 @@ This means the physical state is preserved; only the displayed numbers and label
 | `flowRate` | `#flowRateInput` | m³/s | `toSI(..., 'flowRate')`. |
 | `density` | `#density` | kg/m³ | `toSI(..., 'density')`; falls back to `defaults.density`. |
 | `soundSpeed` | `#soundSpeed` | m/s | `toSI(..., 'velocity')`. |
-| `mu` | `#viscosityNumber` | Pa·s | Direct positive number. |
-| `H` | `#consistencyNumber` | Pa·sⁿ | Direct positive number. |
-| `n` | `#flowIndexNumber` | — | Clamped to `≥ 0.2`. |
+| `mu` | `#viscosityNumber` | Pa·s | Clamped to `[0.001, 10]`. |
+| `H` | `#consistencyNumber` | Pa·sⁿ | Clamped to `[0.001, 100]`. |
+| `n` | `#flowIndexNumber` | — | Clamped to `[0.2, 1.8]`. |
 | `tau0` | `#yieldStressNumber` | Pa | `Math.max(0, value)`. |
 
 ### 3.1 Rheology inputs per model
@@ -199,8 +201,8 @@ R_p = Pl * R                          # plug radius
 | `samples` | 201 radial points `{x, r, velocity, stress, shearRate}`. |
 | `maxVelocity` | Maximum velocity (centerline for fully flowing cases). |
 | `meanVelocity` | `Q / (π R²)`, the bulk average velocity. |
-| `flowRate` | `Q` computed by trapezoidal integration of `U_z(r) * r`. |
-| `wallShearRate` | `((3n+1)/(4n)) * (8 V / D)`, the apparent wall shear rate. |
+| `flowRate` | `Q` computed by the closed-form Herschel–Bulkley integral. |
+| `wallShearRate` | Exact wall value: `((ℵ_w - ℵ_0) / K)^(1/n)` for HB/PL, `(ℵ_w - ℵ_0) / µ` for Bingham, `ℵ_w / µ` for Newtonian. |
 
 ### 5.2 Velocity profiles
 
@@ -365,13 +367,13 @@ Possible states: `Sem escoamento`, `Escoando`, `Turbulento`, `Supersônico`, `Tu
 `#profileMode` chooses `linear` or `cubic`:
 
 - **Linear**: `r(x) = r_i + t (r_{i+1} - r_i)` with `t = (x - x_i) / (x_{i+1} - x_i)`.
-- **Cubic**: natural cubic spline built with the tridiagonal algorithm. Falls back to linear if fewer than 3 points.
+- **Cubic**: monotone Fritsch–Carlson (PCHIP) interpolation; avoids overshoot and negative radii. Falls back to linear if fewer than 3 points.
 
 `radiusAt(points, x, mode)` returns `max(1e-6, interpolatedRadius)` to avoid division-by-zero at extremely narrow sections.
 
 ### 7.3 Subdivision
 
-`buildSubsections(points, subdivisions, mode)` creates `N` constant-radius subsections **per original segment**, where `N` is capped so the total number of subsections does not exceed 10,000. Each subsection stores:
+`buildSubsections(points, subdivisions, mode)` creates `N` constant-radius subsections **per original segment**, where `N` is capped so the total number of subsections does not exceed 2,000; the user-supplied value is automatically reduced when necessary. Each subsection stores:
 
 - `xLeft`, `xRight`, `xCenter`
 - `r` = `radiusAt(points, xCenter, mode)`
