@@ -226,14 +226,13 @@ const els = {
   nhFlowState: $('#nhFlowState'),
   nhTotalPressure: $('#nhTotalPressure'),
   nhTotalPressureUnit: $('#nhTotalPressureUnit'),
-  nhMaxVelocity: $('#nhMaxVelocity'),
-  nhMaxVelocityUnit: $('#nhMaxVelocityUnit'),
-  nhMinVelocity: $('#nhMinVelocity'),
-  nhMinVelocityUnit: $('#nhMinVelocityUnit'),
+  nhAvgRadius: $('#nhAvgRadius'),
+  nhAvgRadiusUnit: $('#nhAvgRadiusUnit'),
+  nhAvgVelocity: $('#nhAvgVelocity'),
+  nhAvgVelocityUnit: $('#nhAvgVelocityUnit'),
   nhReMax: $('#nhReMax'),
   nhReMedian: $('#nhReMedian'),
-  nhMachMax: $('#nhMachMax'),
-  nhMachMedian: $('#nhMachMedian'),
+  nhAvgMach: $('#nhAvgMach'),
   nhSectionCount: $('#nhSectionCount'),
   ductProfileCanvas: $('#ductProfileCanvas'),
   ductFlowCanvas: $('#ductFlowCanvas'),
@@ -538,6 +537,11 @@ function calculateNonHomogeneous() {
   const sectionResults = subsections.map((s) => solveSection(baseParams, s.r, s.dx, flowSpec));
   const totalPressure = sectionResults.reduce((sum, sr) => sum + sr.dp, 0);
   verifyNHResults(sectionResults, targetQ, flowMode === 'pressureGradient' ? targetP : totalPressure, flowMode);
+  const r2Sum = subsections.reduce((sum, s) => sum + s.r * s.r * s.dx, 0);
+  const avgRadius = Math.sqrt(r2Sum / profileLength);
+  const avgArea = Math.PI * avgRadius * avgRadius;
+  const avgVelocity = targetQ > 0 && avgArea > 0 ? targetQ / avgArea : 0;
+  const avgMach = baseParams.soundSpeed > 0 ? avgVelocity / baseParams.soundSpeed : 0;
   const segmentResults = [];
   for (let i = 0; i < points.length - 1; i += 1) {
     const x = points[i].x;
@@ -546,32 +550,27 @@ function calculateNonHomogeneous() {
     const centerIdx = Math.floor(segmentSubs.length / 2);
     const centerSr = segmentSubs[centerIdx] || segmentSubs[0];
     const dpSum = segmentSubs.reduce((sum, sr) => sum + sr.dp, 0);
-    if (centerSr) segmentResults.push({ x, dx, r: centerSr.data.params.R, maxV: centerSr.data.maxVelocity, re: centerSr.re, mach: centerSr.mach, dp: dpSum });
+    if (centerSr) segmentResults.push({ x, dx, r: centerSr.data.params.R, meanV: centerSr.data.meanVelocity, re: centerSr.re, mach: centerSr.mach, dp: dpSum });
   }
-  const maxV = Math.max(...sectionResults.map((s) => s.data.maxVelocity));
-  const minV = Math.min(...sectionResults.map((s) => s.data.maxVelocity));
   const reValues = sectionResults.map((s) => s.re);
-  const machValues = sectionResults.map((s) => s.mach);
   nhGeometry = {
     ...nhGeometry,
     sectionResults,
     segmentResults,
     totalPressure,
-    maxV,
-    minV,
+    avgRadius,
+    avgVelocity,
+    avgMach,
     reMax: Math.max(...reValues),
     reMedian: median(reValues),
-    machMax: Math.max(...machValues),
-    machMedian: median(machValues),
     calculated: true,
     geometryDirty: false,
     resultsDirty: false,
-    globalMaxV: maxV,
     baseParams,
     flowSpec
   };
   console.log(`[RheoFlow NH resolution] ${subsections.length} subsections, total Δp = ${totalPressure.toExponential(8)} Pa, mode = ${flowMode}`);
-  console.table(segmentResults.map((s, i) => ({ section: i + 1, x: s.x, dx: s.dx, R: s.r, Umax: s.maxV, Re: s.re, Ma: s.mach, dp: s.dp })));
+  console.table(segmentResults.map((s, i) => ({ section: i + 1, x: s.x, dx: s.dx, R: s.r, U: s.meanV, Re: s.re, Ma: s.mach, dp: s.dp })));
   updateNonHomogeneousMetrics();
   showNHVisual('flow');
   updateNHButtons();
@@ -589,21 +588,20 @@ function updateUnitDisplay(element, dimension) {
 
 function updateNonHomogeneousMetrics() {
   if (!nhGeometry) return;
-  const { totalPressure, maxV, minV, reMax, reMedian, machMax, machMedian, segmentResults, subsections } = nhGeometry;
+  const { totalPressure, avgRadius, avgVelocity, avgMach, reMax, reMedian, segmentResults, subsections } = nhGeometry;
   els.nhTotalPressure.textContent = formatValue(fromSI(totalPressure, 'pressure'), 3);
   updateUnitDisplay(els.nhTotalPressureUnit, 'pressure');
-  els.nhMaxVelocity.textContent = formatValue(fromSI(maxV, 'velocity'), 3);
-  updateUnitDisplay(els.nhMaxVelocityUnit, 'velocity');
-  els.nhMinVelocity.textContent = formatValue(fromSI(minV, 'velocity'), 3);
-  updateUnitDisplay(els.nhMinVelocityUnit, 'velocity');
+  els.nhAvgRadius.textContent = formatValue(fromSI(avgRadius, 'length'), 4);
+  updateUnitDisplay(els.nhAvgRadiusUnit, 'length');
+  els.nhAvgVelocity.textContent = formatValue(fromSI(avgVelocity, 'velocity'), 3);
+  updateUnitDisplay(els.nhAvgVelocityUnit, 'velocity');
   els.nhReMax.textContent = formatValue(reMax, 2);
   els.nhReMedian.textContent = formatValue(reMedian, 2);
-  els.nhMachMax.textContent = formatValue(machMax, 3);
-  els.nhMachMedian.textContent = formatValue(machMedian, 3);
+  els.nhAvgMach.textContent = formatValue(avgMach, 3);
   els.nhSectionCount.textContent = String(subsections.length);
-  const anyFlowing = maxV > 0;
+  const anyFlowing = avgVelocity > 0;
   const turbulent = reMax > 2100;
-  const supersonic = machMax > 1;
+  const supersonic = avgMach > 1;
   els.nhFlowState.classList.remove('stopped', 'turbulent', 'supersonic');
   if (!anyFlowing) {
     els.nhFlowState.innerHTML = '<span></span>Sem escoamento';
@@ -620,7 +618,7 @@ function updateNonHomogeneousMetrics() {
   } else {
     els.nhFlowState.innerHTML = '<span></span>Escoando';
   }
-  els.nhSectionTableBody.innerHTML = segmentResults.map((s) => `<tr><td>${formatValue(fromSI(s.x, 'length'), 3)}</td><td>${formatValue(fromSI(s.dx, 'length'), 3)}</td><td>${formatValue(fromSI(s.r, 'length'), 4)}</td><td>${formatValue(fromSI(s.maxV, 'velocity'), 3)}</td><td>${formatValue(s.re, 2)}</td><td>${formatValue(fromSI(s.dp, 'pressure'), 3)}</td></tr>`).join('');
+  els.nhSectionTableBody.innerHTML = segmentResults.map((s) => `<tr><td>${formatValue(fromSI(s.x, 'length'), 3)}</td><td>${formatValue(fromSI(s.dx, 'length'), 3)}</td><td>${formatValue(fromSI(s.r, 'length'), 4)}</td><td>${formatValue(fromSI(s.meanV, 'velocity'), 3)}</td><td>${formatValue(s.re, 2)}</td><td>${formatValue(fromSI(s.dp, 'pressure'), 3)}</td></tr>`).join('');
 }
 
 function drawDuctProfile() {

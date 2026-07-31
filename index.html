@@ -393,12 +393,12 @@
               <div><span>Δp total <span class="math">Δp</span></span><strong id="nhTotalPressure">—</strong><select id="nhTotalPressureUnit" class="unit-select" data-dimension="pressure" aria-label="Unidade de pressão"><option value="Pa" selected>Pa</option><option value="kPa">kPa</option><option value="psi">psi</option></select></div>
             </article>
             <article class="metric-card accent-blue">
-              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 18V6m5 12V9m5 9V4m5 14v-7"/></svg></div>
-              <div><span>Velocidade máxima <span class="math">U<sub>max</sub></span></span><strong id="nhMaxVelocity">—</strong><select id="nhMaxVelocityUnit" class="unit-select" data-dimension="length" aria-label="Unidade de velocidade"><option value="m" selected>m/s</option><option value="ft">ft/s</option><option value="in">in/s</option></select></div>
+              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10Zm0-15v10"/></svg></div>
+              <div><span>Raio médio <span class="math">R</span></span><strong id="nhAvgRadius">—</strong><select id="nhAvgRadiusUnit" class="unit-select" data-dimension="length" aria-label="Unidade de comprimento"><option value="m" selected>m</option><option value="ft">ft</option><option value="in">in</option></select></div>
             </article>
             <article class="metric-card accent-violet">
-              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M5 19c4-11 10-11 14 0M8 14h8"/></svg></div>
-              <div><span>Velocidade mínima <span class="math">U<sub>min</sub></span></span><strong id="nhMinVelocity">—</strong><select id="nhMinVelocityUnit" class="unit-select" data-dimension="length" aria-label="Unidade de velocidade"><option value="m" selected>m/s</option><option value="ft">ft/s</option><option value="in">in/s</option></select></div>
+              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 18V6m5 12V9m5 9V4m5 14v-7"/></svg></div>
+              <div><span>Velocidade média <span class="math">U</span></span><strong id="nhAvgVelocity">—</strong><select id="nhAvgVelocityUnit" class="unit-select" data-dimension="length" aria-label="Unidade de velocidade"><option value="m" selected>m/s</option><option value="ft">ft/s</option><option value="in">in/s</option></select></div>
             </article>
             <article class="metric-card accent-amber">
               <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M7 8l5-5 5 5M7 16l5 5 5-5"/></svg></div>
@@ -410,13 +410,9 @@
             </article>
             <article class="metric-card accent-blue">
               <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M7 8l5-5 5 5M7 16l5 5 5-5"/></svg></div>
-              <div><span>Mach máximo <span class="math">Ma</span></span><strong id="nhMachMax">—</strong></div>
+              <div><span>Mach médio <span class="math">Ma</span></span><strong id="nhAvgMach">—</strong></div>
             </article>
             <article class="metric-card accent-violet">
-              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M7 8l5-5 5 5M7 16l5 5 5-5"/></svg></div>
-              <div><span>Mach mediano <span class="math">Ma<sub>med</sub></span></span><strong id="nhMachMedian">—</strong></div>
-            </article>
-            <article class="metric-card accent-amber">
               <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 12h16m-5-5 5 5-5 5"/></svg></div>
               <div><span>Seções <span class="math">N</span></span><strong id="nhSectionCount">—</strong></div>
             </article>
@@ -451,7 +447,7 @@
             <div class="table-wrap">
               <table class="nh-table">
                 <thead>
-                  <tr><th>x (início)</th><th>Δx</th><th>R</th><th>U<sub>max</sub></th><th>Re</th><th>Δp</th></tr>
+                  <tr><th>x (início)</th><th>Δx</th><th>R</th><th>U</th><th>Re</th><th>Δp</th></tr>
                 </thead>
                 <tbody id="nhSectionTableBody"></tbody>
               </table>
