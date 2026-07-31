@@ -260,6 +260,7 @@ let nhPaused = false;
 let nhFlowTime = 0;
 let nhParticles = [];
 let nhView = 'profile';
+let displaySciDigits = 2;
 
 function readPositive(input, fallback) {
   const value = Number(input.value);
@@ -569,6 +570,7 @@ function calculateNonHomogeneous() {
     baseParams,
     flowSpec
   };
+  console.log(`[RheoFlow NH resolution] ${subsections.length} subsections, total Δp = ${totalPressure.toExponential(8)} Pa, mode = ${flowMode}`);
   console.table(segmentResults.map((s, i) => ({ section: i + 1, x: s.x, dx: s.dx, R: s.r, Umax: s.maxV, Re: s.re, Ma: s.mach, dp: s.dp })));
   updateNonHomogeneousMetrics();
   showNHVisual('flow');
@@ -1032,7 +1034,7 @@ function darcyFrictionFactor(re, m) {
 function formatValue(value, digits = 3) {
   if (!Number.isFinite(value)) return '—';
   const abs = Math.abs(value);
-  if (abs !== 0 && (abs >= 10000 || abs < 0.001)) return value.toExponential(2).replace('.', ',');
+  if (abs !== 0 && (abs >= 10000 || abs < 0.001)) return value.toExponential(displaySciDigits).replace('.', ',');
   return value.toLocaleString('pt-BR', { maximumFractionDigits: digits });
 }
 
@@ -1210,6 +1212,19 @@ function updateMetrics(data, mode = {}) {
     els.flowState.innerHTML = '<span></span>Supersônico';
   } else {
     els.flowState.innerHTML = '<span></span>Escoando';
+  }
+}
+
+function refreshDisplays() {
+  if (result) {
+    updateMetrics(result, { pressureDifference: result.params.G * result.params.tubeLength });
+    updateEquation(result);
+    drawProfileChart();
+  }
+  if (nhGeometry) {
+    updateNonHomogeneousMetrics();
+    if (nhView === 'profile') drawDuctProfile();
+    else drawDuctFlow(0);
   }
 }
 
@@ -1719,6 +1734,15 @@ els.nhPauseButton.addEventListener('click', () => {
   nhPaused = !nhPaused;
   els.nhPauseButton.classList.toggle('paused', nhPaused);
   els.nhAnimationLabel.textContent = nhPaused ? 'Animação pausada' : 'Animação ativa';
+});
+
+document.addEventListener('click', (e) => {
+  const strong = e.target.closest('strong');
+  if (!strong) return;
+  if (!strong.closest('.metric-card, .diagnostic-list')) return;
+  if (!/[0-9]/.test(strong.textContent)) return;
+  displaySciDigits = displaySciDigits === 2 ? 6 : 2;
+  refreshDisplays();
 });
 
 resetParticles();
