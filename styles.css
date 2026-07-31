@@ -150,7 +150,8 @@ input[type='range']::-moz-range-thumb { width: 9px; height: 9px; border-radius: 
 .metric-card.accent-amber .metric-icon { color: var(--amber); background: rgba(255, 187, 85, .1); }
 .metric-card span { color: var(--muted); font-size: calc(var(--font-scale, 1) * 8px); font-weight: 800; text-transform: uppercase; letter-spacing: .07em; display: block; }
 .metric-card strong { font-family: var(--mono); font-size: calc(var(--font-scale, 1) * clamp(15px, 1.5vw, 21px)); font-weight: 500; display: inline-block; margin-top: 4px; white-space: nowrap; cursor: pointer; }
-.metric-card small { color: var(--muted-2); font-size: calc(var(--font-scale, 1) * 8px); margin-left: 4px; }
+.metric-card small, .metric-card .unit-select { color: var(--muted-2); font-size: calc(var(--font-scale, 1) * 8px); margin-left: 4px; }
+.metric-card .unit-select { appearance: none; border: 0; background: transparent; font-family: var(--mono); cursor: pointer; padding: 0 10px 0 0; text-align: left; outline: none; }
 .metric-card > div:last-child { flex: 1 1 0; min-width: 0; }
 .metric-card span.math { display: inline; }
 .visual-grid { display: grid; grid-template-columns: 1.18fr 1fr; gap: 12px; margin-top: 12px; }

@@ -577,15 +577,25 @@ function calculateNonHomogeneous() {
   updateNHButtons();
 }
 
+function updateUnitDisplay(element, dimension) {
+  if (!element) return;
+  if (element.tagName === 'SELECT') {
+    const selectDim = element.dataset.dimension;
+    if (selectDim && units[selectDim]) element.value = units[selectDim];
+  } else {
+    element.textContent = getUnitLabel(dimension);
+  }
+}
+
 function updateNonHomogeneousMetrics() {
   if (!nhGeometry) return;
   const { totalPressure, maxV, minV, reMax, reMedian, machMax, machMedian, segmentResults, subsections } = nhGeometry;
   els.nhTotalPressure.textContent = formatValue(fromSI(totalPressure, 'pressure'), 3);
-  els.nhTotalPressureUnit.textContent = getUnitLabel('pressure');
+  updateUnitDisplay(els.nhTotalPressureUnit, 'pressure');
   els.nhMaxVelocity.textContent = formatValue(fromSI(maxV, 'velocity'), 3);
-  els.nhMaxVelocityUnit.textContent = getUnitLabel('velocity');
+  updateUnitDisplay(els.nhMaxVelocityUnit, 'velocity');
   els.nhMinVelocity.textContent = formatValue(fromSI(minV, 'velocity'), 3);
-  els.nhMinVelocityUnit.textContent = getUnitLabel('velocity');
+  updateUnitDisplay(els.nhMinVelocityUnit, 'velocity');
   els.nhReMax.textContent = formatValue(reMax, 2);
   els.nhReMedian.textContent = formatValue(reMedian, 2);
   els.nhMachMax.textContent = formatValue(machMax, 3);
