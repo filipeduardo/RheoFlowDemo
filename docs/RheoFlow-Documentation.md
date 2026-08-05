@@ -522,10 +522,10 @@ Increasing `Subdivisões por trecho` refines the integration:
 | `τ₀` | `tau0` | Pa | `Pa` | From `#yieldStressNumber`. |
 | `Pl` | `Pl` | — | — | `τ₀ / τ_w` (clamped to `[0,1]`). |
 | `R_p` | `Rp` | m | `m`, `ft`, `in` | `Pl * R`. |
-| `γ̇_w` | `wallShearRate` | s⁻¹ | `s⁻¹` | `((3n+1)/(4n)) (8V/D)`. |
+| `γ̇_w` | `wallShearRate` | s⁻¹ | `s⁻¹` | Exact wall value: `((τ_w − τ₀)/K)^(1/n)` for HB/PL, `(τ_w − τ₀)/μ` for Bingham, `τ_w/μ` for Newtonian; for power-law this equals `((3n+1)/(4n))(8V/D)` (Rabinowitsch–Mooney). |
 | `Re` | `re` | — | — | `8 ρ V² factor / [τ₀ + K factor^n (8V/D)^n]`. |
 | `Re_HBE` | `reHbe` | — | — | Madlener 2009 HBE generalized Reynolds. |
-| `m` | `mClamped` | — | — | `n K γ̇_w^n / τ_w`. |
+| `m` | `mClamped` | — | — | `n K (8V/D)^n / (τ₀ + K (8V/D)^n)` (η∞ = 0); derivative of the HBE law with respect to the apparent wall shear rate. |
 | `f_D` | `fDarcy` | — | — | `64/Re` laminar; Dodge–Metzner turbulent. |
 | `Δp_DW` | `darcyWeisbachDp` | Pa | `Pa`, `kPa`, `psi` | `f_D (L/D) (ρ V² / 2)`. |
 | `Ma` | `mach` | — | — | `V / c`. |
