@@ -310,9 +310,9 @@ This guarantees consistency between the profile, `V`, and all Reynolds/Mach numb
 | `Pl` | `Pl` | `τ₀ / τ_w` (0 if `τ₀ = 0`). |
 | `R_p` | `R_p` | `Pl * R` (shown only if `τ₀ > 0`). |
 | `A_nc` | `A_nc` | `Pl² * 100` as a percentage. |
-| `γ̇_w` | `γ̇_w` | `((3n+1)/(4n)) * (8 V / D)`. |
+| `γ̇_w` | `γ̇_w` | Exact wall value: `((τ_w − τ₀)/K)^(1/n)` for HB/PL, `(τ_w − τ₀)/μ` for Bingham, `τ_w/μ` for Newtonian; for power-law this equals `((3n+1)/(4n))(8V/D)` (Rabinowitsch–Mooney). |
 | `Re` | `Re` | `8 ρ V² ((3n+1)/(4n)) / [τ₀ + K ((3n+1)/(4n))^n (8V/D)^n]` |
-| `m` | `m` | `n K γ̇_w^n / τ_w` (with `η_∞ = 0`). |
+| `m` | `m` | `n K γ̇_app^n / (τ₀ + K γ̇_app^n)` with `γ̇_app = 8V/D` (and `η_∞ = 0`). |
 | `Re_HBE` | `Re_HBE` | `ρ V^(2-n) D^n / [ (τ₀/8)(D/V)^n + K ((3m+1)/(4m))^n 8^(n-1) ]` |
 | `f_D` | `f_D` | `64 / Re_HBE` if `Re_HBE ≤ 2100`; otherwise solved from the Dodge–Metzner implicit equation. |
 | `Δp_DW` | `Δp_DW` | `f_D (L/D) (ρ V² / 2)`. |
@@ -522,10 +522,10 @@ Increasing `Subdivisões por trecho` refines the integration:
 | `τ₀` | `tau0` | Pa | `Pa` | From `#yieldStressNumber`. |
 | `Pl` | `Pl` | — | — | `τ₀ / τ_w` (clamped to `[0,1]`). |
 | `R_p` | `Rp` | m | `m`, `ft`, `in` | `Pl * R`. |
-| `γ̇_w` | `wallShearRate` | s⁻¹ | `s⁻¹` | `((3n+1)/(4n)) (8V/D)`. |
+| `γ̇_w` | `wallShearRate` | s⁻¹ | `s⁻¹` | Exact wall value: `((τ_w − τ₀)/K)^(1/n)` for HB/PL, `(τ_w − τ₀)/μ` for Bingham, `τ_w/μ` for Newtonian; for power-law this equals `((3n+1)/(4n))(8V/D)` (Rabinowitsch–Mooney). |
 | `Re` | `re` | — | — | `8 ρ V² factor / [τ₀ + K factor^n (8V/D)^n]`. |
 | `Re_HBE` | `reHbe` | — | — | Madlener 2009 HBE generalized Reynolds. |
-| `m` | `mClamped` | — | — | `n K γ̇_w^n / τ_w`. |
+| `m` | `mClamped` | — | — | `n K (8V/D)^n / (τ₀ + K (8V/D)^n)` (η∞ = 0); derivative of the HBE law with respect to the apparent wall shear rate. |
 | `f_D` | `fDarcy` | — | — | `64/Re` laminar; Dodge–Metzner turbulent. |
 | `Δp_DW` | `darcyWeisbachDp` | Pa | `Pa`, `kPa`, `psi` | `f_D (L/D) (ρ V² / 2)`. |
 | `Ma` | `mach` | — | — | `V / c`. |

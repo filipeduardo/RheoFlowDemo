@@ -205,6 +205,7 @@ const els = {
   wallShearRate: $('#wallShearRate'),
   equation: $('#equation'),
   wallStressEquation: $('#wallStressEquation'),
+  wallShearRateEquation: $('#wallShearRateEquation'),
   flowRateEquation: $('#flowRateEquation'),
   localGradientEquation: $('#localGradientEquation'),
   reynoldsHbeEquation: $('#reynoldsHbeEquation'),
@@ -1390,7 +1391,7 @@ function refreshDisplays() {
 let typesetTimeout;
 function typesetEquations() {
   if (!window.MathJax || !window.MathJax.typesetPromise) return;
-  const nodes = [els.equation, els.wallStressEquation, els.flowRateEquation, els.localGradientEquation, els.reynoldsHbeEquation, els.darcyFrictionEquation, els.darcyWeisbachEquation, els.equationVars];
+  const nodes = [els.equation, els.wallStressEquation, els.wallShearRateEquation, els.flowRateEquation, els.localGradientEquation, els.reynoldsHbeEquation, els.darcyFrictionEquation, els.darcyWeisbachEquation, els.equationVars];
   if (window.MathJax.typesetClear) window.MathJax.typesetClear(nodes);
   window.MathJax.typesetPromise(nodes).catch(() => {});
 }
@@ -1407,18 +1408,22 @@ function updateEquation(data) {
   if (model === 'newtonian') {
     els.equation.textContent = String.raw`\[\tau_{rz}=\mu\frac{dU_z}{dr},\qquad U_z(r)=\frac{G}{4\mu}\left(R^2-r^2\right),\quad 0\le r\le R\]`;
     els.flowRateEquation.textContent = String.raw`\[Q=2\pi\int_0^R U_z(r)\,r\,dr=\frac{\pi G R^4}{8\mu}\]`;
+    els.wallShearRateEquation.textContent = String.raw`\[\dot{\gamma}_w=\frac{8\bar{u}}{D}=\frac{\tau_w}{\mu}=${formatValue(data.wallShearRate, 3)}\ \mathrm{s^{-1}}\]`;
     els.equationVars.textContent = String.raw`\(\mu=${formatValue(mu, 4)}\ \mathrm{Pa\,s},\quad G=${formatValue(G, 2)}\ \mathrm{Pa\,m^{-1}},\quad R=${formatValue(R, 4)}\ \mathrm{m},\quad Q=${formatValue(data.flowRate, 4)}\ \mathrm{m^3\,s^{-1}}\)`;
   } else if (model === 'powerLaw') {
     els.equation.textContent = String.raw`\[\tau_{rz}=-H\left(-\frac{dU_z}{dr}\right)^n,\qquad U_z(r)=\frac{nR}{n+1}\left(\frac{\tau_w}{H}\right)^{1/n}\left[1-\left(\frac rR\right)^{(n+1)/n}\right]\]`;
     els.flowRateEquation.textContent = String.raw`\[Q=2\pi\int_0^R U_z(r)\,r\,dr=\frac{\pi nR^3}{3n+1}\left(\frac{\tau_w}{H}\right)^{1/n}\]`;
+    els.wallShearRateEquation.textContent = String.raw`\[\dot{\gamma}_w=\left(\frac{\tau_w}{H}\right)^{1/n}=\frac{3n+1}{4n}\frac{8\bar{u}}{D}=${formatValue(data.wallShearRate, 3)}\ \mathrm{s^{-1}}\]`;
     els.equationVars.textContent = String.raw`\(H=${formatValue(H, 4)}\ \mathrm{Pa\,s^n},\quad n=${formatValue(n, 2)},\quad G=${formatValue(G, 2)}\ \mathrm{Pa\,m^{-1}},\quad R=${formatValue(R, 4)}\ \mathrm{m},\quad Q=${formatValue(data.flowRate, 4)}\ \mathrm{m^3\,s^{-1}}\)`;
   } else if (model === 'bingham') {
     els.equation.textContent = String.raw`\[U_z(r)=\begin{cases}\displaystyle \frac{R\tau_w}{2\mu}(1-\mathrm{Pl})^2,&0\le r\le R_p,\\[6pt]\displaystyle \frac{R\tau_w}{2\mu}\left[(1-\mathrm{Pl})^2-\left(\frac rR-\mathrm{Pl}\right)^2\right],&R_p<r\le R,\end{cases}\quad \underbrace{\mathrm{Pl}=\frac{R_p}{R}=\frac{\tau_0}{\tau_w}}_{\text{índice de plasticidade}}\]`;
     els.flowRateEquation.textContent = String.raw`\[Q=2\pi\left[\int_0^{R_p}U_p r\,dr+\int_{R_p}^{R}U_z(r)r\,dr\right]=\frac{\pi G R^4}{8\mu}\left(1-\frac{4\mathrm{Pl}}{3}+\frac{\mathrm{Pl}^4}{3}\right)\]`;
+    els.wallShearRateEquation.textContent = String.raw`\[\dot{\gamma}_w=\frac{\tau_w-\tau_0}{\mu}=${formatValue(data.wallShearRate, 3)}\ \mathrm{s^{-1}}\]`;
     els.equationVars.textContent = String.raw`\(\mu=${formatValue(mu, 4)}\ \mathrm{Pa\,s},\quad \tau_0=${formatValue(data.tau0, 3)}\ \mathrm{Pa},\quad \mathrm{Pl}=${formatValue(data.Pl, 4)},\quad R_p=${formatValue(data.Rp, 5)}\ \mathrm{m},\quad Q=${formatValue(data.flowRate, 4)}\ \mathrm{m^3\,s^{-1}}\)`;
   } else {
     els.equation.textContent = String.raw`\[U_z(r)=\begin{cases}\displaystyle \frac{nR}{n+1}\left(\frac{\tau_w}{H}\right)^{1/n}(1-\mathrm{Pl})^{(n+1)/n},&0\le r\le R_p,\\[6pt]\displaystyle \frac{nR}{n+1}\left(\frac{\tau_w}{H}\right)^{1/n}\left[(1-\mathrm{Pl})^{(n+1)/n}-\left(\frac rR-\mathrm{Pl}\right)^{(n+1)/n}\right],&R_p<r\le R,\end{cases}\quad \underbrace{\mathrm{Pl}=\frac{R_p}{R}=\frac{\tau_0}{\tau_w}}_{\text{índice de plasticidade}}\]`;
     els.flowRateEquation.textContent = String.raw`\[Q=\pi R^3\left(\frac{\tau_w}{H}\right)^{1/n}\left[\frac{(1-\mathrm{Pl})^{1/n+3}}{1/n+3}+\frac{2\mathrm{Pl}(1-\mathrm{Pl})^{1/n+2}}{1/n+2}+\frac{\mathrm{Pl}^2(1-\mathrm{Pl})^{1/n+1}}{1/n+1}\right]\]`;
+    els.wallShearRateEquation.textContent = String.raw`\[\dot{\gamma}_w=\left(\frac{\tau_w-\tau_0}{H}\right)^{1/n}=${formatValue(data.wallShearRate, 3)}\ \mathrm{s^{-1}}\]`;
     els.equationVars.textContent = String.raw`\(H=${formatValue(H, 4)}\ \mathrm{Pa\,s^n},\quad n=${formatValue(n, 2)},\quad \tau_0=${formatValue(data.tau0, 3)}\ \mathrm{Pa},\quad \mathrm{Pl}=${formatValue(data.Pl, 4)},\quad R_p=${formatValue(data.Rp, 5)}\ \mathrm{m},\quad Q=${formatValue(data.flowRate, 4)}\ \mathrm{m^3\,s^{-1}}\)`;
   }
   els.localGradientEquation.textContent = String.raw`\[\dot{\gamma}_{\mathrm{appw}}=\frac{8\bar{u}}{D},\qquad m=\frac{nK\left(\frac{8\bar{u}}{D}\right)^n+\eta_\infty\left(\frac{8\bar{u}}{D}\right)}{\tau_0+K\left(\frac{8\bar{u}}{D}\right)^n+\eta_\infty\left(\frac{8\bar{u}}{D}\right)}\quad\Rightarrow\quad \eta_\infty=0:\ m=\frac{nK\left(\frac{8\bar{u}}{D}\right)^n}{\tau_0+K\left(\frac{8\bar{u}}{D}\right)^n}\]`;
