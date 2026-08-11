@@ -284,21 +284,53 @@ Textarea com duas colunas `x r` (posição axial e raio local). Apenas números,
 - `Seções N` — número total de subseções.
 - Tabela de trechos originais com `x`, `Δx`, `R`, `U`, `Re_HBE`, `Δp`.
 
-## 8. Visualização
+## 8. Feixe de Dutos
 
-### 8.1 Modo homogêneo
+O modo **Feixe de dutos** trata `N` dutos circulares idênticos dispostos em paralelo, cada um com o mesmo raio `r` e sujeito ao mesmo Δp ao longo do comprimento `L`.
+
+### 8.1 Entradas
+
+- **Número de dutos**: `N` (inteiro, 1–100 000). O envelope é o menor círculo que contém os centros mais o raio do duto.
+- **Porosidade**: `φ` e área total do envelope `A_total`. O simulador calcula `N = round(φ A_total / (π r²))` e exibe a porosidade efetiva `φ_eff = N π r² / A_total`.
+- Raio do duto `r` e comprimento `L` são os mesmos controles do modo homogêneo.
+
+### 8.2 Empacotamento
+
+- Modo **contagem**: empacotamento hexagonal (triangular) com espaçamento `2r`, centrado na origem; `R_env = r + d_max`.
+- Modo **porosidade**: grade hexagonal com espaçamento `s = sqrt(2 A_total / (N √3))`. Se `s < 2r`, o espaçamento é limitado a `2r` e um aviso indica que `φ` supera o limite de empacotamento (`π / (2√3) ≈ 0,907`). O empacotamento é apenas visual; a vazão depende apenas de `N` e `r`.
+
+### 8.3 Cálculo
+
+- Por duto: resolve `G` a partir de `Q_total / N` (modo vazão fixa) ou usa `G` dado (modo gradiente de pressão).
+- `Q_total = N Q_duto`.
+- `Δp` é o mesmo para todos os dutos e usa `dpEffective` (laminar exato ou Dodge–Metzner suavizado).
+- Cada duto usa os mesmos perfis, tensões e Reynolds do modo homogêneo.
+
+### 8.4 Painel de resultados
+
+- `Q_total`, `Δp`, `N`, `φ_eff`, `R_env`, `U_duto`.
+- Diagnósticos por duto: `τ_w`, `Pl`, `Re_HBE`, `Ma`.
+- Visualização da seção transversal com o envelope e os dutos.
+
+### 8.5 Exportação CSV
+
+O CSV do feixe (`rheoflow-bundle-<N>.csv`) contém uma linha de comentário com `N`, `φ_eff`, `A_total` e `Q_total`, seguida do perfil radial por duto: `r_m, r_over_R, velocity_m_per_s, shear_stress_Pa, shear_rate_per_s`.
+
+## 9. Visualização
+
+### 9.1 Modo homogêneo
 
 - **Perfil radial**: `U(r/R)` (ciano) e `τ(r/R)` (âmbar tracejado), região de plugue em violeta.
 - **Escoamento longitudinal**: duto pseudo-3D com partículas cuja velocidade depende da razão `U(y/R) / U_max`.
 
-### 8.2 Modo não homogêneo
+### 9.2 Modo não homogêneo
 
 - **Perfil do duto**: `r` vs `x` com pontos de entrada e subdivisões.
 - **Escoamento no duto**: duto cônico com partículas aceleradas nas seções mais estreitas.
 
 A animação é conduzida por `requestAnimationFrame`.
 
-## 9. Acessibilidade e Controles da UI
+## 10. Acessibilidade e Controles da UI
 
 - **Popover de acessibilidade**: alternar painéis, tamanho da fonte (`1×`, `1,15×`, `1,3×`) e espessura das linhas (`1×`, `1,5×`, `2×`).
 - **Alternância de tema**: claro/escuro.
@@ -306,7 +338,7 @@ A animação é conduzida por `requestAnimationFrame`.
 - **Exportar CSV**: no modo homogêneo baixa `rheoflow-<modelo>.csv` com `r_m, r_over_R, velocity_m_per_s, shear_stress_Pa, shear_rate_per_s`; no modo não homogêneo baixa `rheoflow-nh-<N>.csv` com `x_m, dx_m, r_m, velocity_m_per_s, re_hbe, dp_Pa`.
 - **Clique para precisão**: alterna `displaySciDigits` entre 2 e 6 nas notações científicas.
 
-## 10. Comportamento em Cenários
+## 11. Comportamento em Cenários
 
 - **Sem escoamento**: se `τ_w ≤ τ₀` (homogêneo) ou `targetP ≤ thresholdPressure` (NH), `Q = 0` e o distintivo mostra `Sem escoamento`.
 - **Mudança de unidade**: preserva o estado físico; apenas rótulos e números mudam. As equações permanecem em SI.
@@ -320,7 +352,7 @@ A animação é conduzida por `requestAnimationFrame`.
 - **Convergência NH**: aumentar subdivisões refina a integração e `Δp` converge.
 - **Entradas extremas**: raios < `1e-6` m são limitados; `G`/`Q` altos são delimitados até `1e12`.
 
-## 11. Referência Rápida
+## 12. Referência Rápida
 
 | Símbolo | Unidade SI | Cálculo |
 |---------|------------|---------|
@@ -345,7 +377,7 @@ A animação é conduzida por `requestAnimationFrame`.
 | `U_avg` | m/s | `Q / (π R_avg²)` |
 | `Ma_avg` | — | `U_avg / c` |
 
-## 12. Notas para Desenvolvedores
+## 13. Notas para Desenvolvedores
 
 - Todos os números exibidos usam `formatValue`, que respeita `displaySciDigits` (2 ou 6).
 - Renderização das equações via `MathJax.typesetPromise`, com `debounce` de 150 ms para evitar trabalho excessivo durante digitação.

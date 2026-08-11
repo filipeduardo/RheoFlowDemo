@@ -15,7 +15,9 @@ const defaults = {
   tubeLength: 0.5,
   flowRate: 0.001,
   density: 1000,
-  soundSpeed: 1500
+  soundSpeed: 1500,
+  bundleDuctCount: 19,
+  bundlePorosity: 0.15
 };
 
 function getModelDefaults(model) {
@@ -39,10 +41,16 @@ const units = {
   length: 'm',
   velocity: 'm/s',
   flowRate: 'm3/d',
-  density: 'kg/m3'
+  density: 'kg/m3',
+  area: 'm2'
 };
 
 const unitOptions = {
+  area: [
+    { value: 'm2', label: 'm²', toBase: 1 },
+    { value: 'ft2', label: 'ft²', toBase: 0.09290304 },
+    { value: 'in2', label: 'in²', toBase: 0.00064516 }
+  ],
   pressure: [
     { value: 'Pa', label: 'Pa', toBase: 1 },
     { value: 'kPa', label: 'kPa', toBase: 1000 },
@@ -129,6 +137,82 @@ function readNonNegativeDisplay(input, dimension, fallbackSI) {
   if (!Number.isFinite(value) || value < 0) return fallbackSI;
   return toSI(value, dimension);
 }
+
+function hexLattice(N, spacing) {
+  const centers = [];
+  if (!Number.isFinite(N) || N <= 0 || !Number.isFinite(spacing) || spacing <= 0) return centers;
+  centers.push({ x: 0, y: 0 });
+  if (N === 1) return centers;
+  let ring = 0;
+  while (centers.length < N) {
+    ring += 1;
+    for (let q = -ring; q <= ring; q += 1) {
+      for (let r = -ring; r <= ring; r += 1) {
+        const s = -q - r;
+        if (Math.max(Math.abs(q), Math.abs(r), Math.abs(s)) !== ring) continue;
+        const x = spacing * (q + r / 2);
+        const y = spacing * (Math.sqrt(3) / 2 * r);
+        centers.push({ x, y });
+      }
+    }
+  }
+  centers.sort((a, b) => (a.x * a.x + a.y * a.y) - (b.x * b.x + b.y * b.y));
+  return centers.slice(0, N);
+}
+
+function getBundleGeometry(params) {
+  const r = Math.max(1e-9, params.R);
+  const inputMode = els.bundleInputMode ? els.bundleInputMode.value : 'count';
+  const maxN = 100000;
+  let N;
+  let R_env;
+  let A_total;
+  let porosity;
+  let centers = [];
+  let packingWarning = false;
+
+  if (inputMode === 'count') {
+    const rawCount = Math.floor(readPositive(els.bundleDuctCount, defaults.bundleDuctCount));
+    N = Math.max(1, Math.min(maxN, rawCount));
+    centers = hexLattice(N, 2 * r);
+    const dMax = centers.reduce((m, c) => Math.max(m, Math.hypot(c.x, c.y)), 0);
+    R_env = r + dMax;
+    A_total = Math.PI * R_env * R_env;
+    porosity = (N * Math.PI * r * r) / A_total;
+  } else {
+    const phi = Math.min(0.999999, Math.max(0.000001, Number(els.bundlePorosityInput.value) || defaults.bundlePorosity));
+    A_total = readDisplay(els.bundleTotalAreaInput, 'area', defaults.bundleTotalArea);
+    const targetN = (phi * A_total) / (Math.PI * r * r);
+    N = Math.max(1, Math.min(maxN, Math.round(targetN)));
+    R_env = Math.sqrt(A_total / Math.PI);
+    let s = Math.sqrt((2 * A_total) / (N * Math.sqrt(3)));
+    if (!Number.isFinite(s) || s <= 0) s = 2 * r;
+    if (s < 2 * r) {
+      packingWarning = true;
+      s = 2 * r;
+    }
+    centers = hexLattice(N, s);
+  }
+  porosity = porosity || (N * Math.PI * r * r) / A_total;
+
+  return {
+    N,
+    r,
+    A_total,
+    R_env,
+    porosity,
+    centers,
+    packingWarning,
+    inputMode
+  };
+}
+
+defaults.bundleTotalArea = (() => {
+  const r = defaults.radius;
+  const centers = hexLattice(defaults.bundleDuctCount, 2 * r);
+  const dMax = centers.reduce((m, c) => Math.max(m, Math.hypot(c.x, c.y)), 0);
+  return Math.PI * Math.pow(r + dMax, 2);
+})();
 
 const modelInfo = {
   newtonian: {
@@ -267,7 +351,35 @@ const els = {
   nhFlowControls: $('#nhFlowControls'),
   nhPauseButton: $('#nhPauseButton'),
   nhAnimationLabel: $('#nhAnimationLabel'),
-  nhSectionTableBody: $('#nhSectionTableBody')
+  nhSectionTableBody: $('#nhSectionTableBody'),
+  bundleGeometry: $('#bundleGeometry'),
+  bundleInputMode: $('#bundleInputMode'),
+  bundleDuctCount: $('#bundleDuctCount'),
+  bundleDuctCountField: $('#bundleDuctCountField'),
+  bundlePorosityInput: $('#bundlePorosityInput'),
+  bundlePorosityField: $('#bundlePorosityField'),
+  bundleTotalAreaInput: $('#bundleTotalAreaInput'),
+  bundleTotalAreaField: $('#bundleTotalAreaField'),
+  bundleTotalAreaUnit: $('#bundleTotalAreaUnit'),
+  bundleDashboard: $('#bundleDashboard'),
+  bundleTotalFlow: $('#bundleTotalFlow'),
+  bundleTotalFlowUnit: $('#bundleTotalFlowUnit'),
+  bundlePressure: $('#bundlePressure'),
+  bundlePressureUnit: $('#bundlePressureUnit'),
+  bundleDuctCountDisplay: $('#bundleDuctCountDisplay'),
+  bundlePorosityDisplay: $('#bundlePorosityDisplay'),
+  bundleEnvelopeRadius: $('#bundleEnvelopeRadius'),
+  bundleEnvelopeRadiusUnit: $('#bundleEnvelopeRadiusUnit'),
+  bundleDuctVelocity: $('#bundleDuctVelocity'),
+  bundleDuctVelocityUnit: $('#bundleDuctVelocityUnit'),
+  bundleFlowState: $('#bundleFlowState'),
+  bundleWallStress: $('#bundleWallStress'),
+  bundlePlasticityIndex: $('#bundlePlasticityIndex'),
+  bundleReynoldsHbe: $('#bundleReynoldsHbe'),
+  bundleMach: $('#bundleMach'),
+  bundleCanvas: $('#bundleCanvas'),
+  bundlePreviewReadout: $('#bundlePreviewReadout'),
+  bundleWarning: $('#bundleWarning')
 };
 
 let result = null;
@@ -283,6 +395,7 @@ let nhPaused = false;
 let nhFlowTime = 0;
 let nhParticles = [];
 let nhView = 'profile';
+let bundleResult = null;
 let displaySciDigits = 2;
 
 function readPositive(input, fallback) {
@@ -859,13 +972,157 @@ function drawDuctFlow(delta = 0) {
   ctx.beginPath(); ctx.moveTo(right - 28, centerY - maxR * yScale - 14); ctx.lineTo(right - 4, centerY - maxR * yScale - 14); ctx.lineTo(right - 10, centerY - maxR * yScale - 18); ctx.moveTo(right - 4, centerY - maxR * yScale - 14); ctx.lineTo(right - 10, centerY - maxR * yScale - 10); ctx.stroke();
 }
 
+function calculateBundle(params, geom) {
+  const r = Math.max(1e-9, geom.r);
+  const N = geom.N;
+  const ductParams = { ...params, R: r };
+  const flowMode = els.flowMode.value;
+  const pressureSpecMode = els.pressureSpecMode.value;
+  let G;
+  let qDuct;
+  if (flowMode === 'pressureGradient') {
+    if (pressureSpecMode === 'differential') {
+      G = params.pressureDifference / params.tubeLength;
+    } else {
+      G = Number.isFinite(params.pressureGradient) ? params.pressureGradient : params.G;
+    }
+    qDuct = flowRateAtG(G, ductParams);
+  } else {
+    qDuct = params.flowRate / N;
+    const hintG = Number.isFinite(params.G) && params.G > 0 ? params.G : defaults.pressureGradient;
+    G = solveForG(qDuct, { ...ductParams, G: hintG }, 1e-6, hintG);
+  }
+  const data = calculate({ ...ductParams, G });
+  const diag = computeDiagnostics(data, ductParams);
+  const dpTotal = dpEffective(ductParams, data, diag);
+  return { data, diag, G, qDuct, qTotal: qDuct * N, dpTotal, geom };
+}
+
+function updateBundleInputVisibility() {
+  if (!els.bundleInputMode) return;
+  const mode = els.bundleInputMode.value;
+  if (els.bundleDuctCountField) els.bundleDuctCountField.hidden = mode !== 'count';
+  if (els.bundlePorosityField) els.bundlePorosityField.hidden = mode !== 'porosity';
+  if (els.bundleTotalAreaField) els.bundleTotalAreaField.hidden = mode !== 'porosity';
+}
+
+function updateBundleMetrics(bundle) {
+  if (!bundle) return;
+  const { data, diag, qTotal, dpTotal, geom } = bundle;
+  const params = data.params;
+  const flowing = data.flowing && data.meanVelocity > 0;
+  const turbulent = diag.reHbe > 2100;
+  const supersonic = diag.mach > 1;
+  els.bundleFlowState.classList.remove('stopped', 'turbulent', 'supersonic');
+  if (!flowing) {
+    els.bundleFlowState.innerHTML = '<span></span>Sem escoamento';
+    els.bundleFlowState.classList.add('stopped');
+  } else if (turbulent && supersonic) {
+    els.bundleFlowState.innerHTML = '<span></span>Turbulento / Supersônico';
+    els.bundleFlowState.classList.add('turbulent', 'supersonic');
+  } else if (turbulent) {
+    els.bundleFlowState.innerHTML = '<span></span>Turbulento';
+    els.bundleFlowState.classList.add('turbulent');
+  } else if (supersonic) {
+    els.bundleFlowState.innerHTML = '<span></span>Supersônico';
+    els.bundleFlowState.classList.add('supersonic');
+  } else {
+    els.bundleFlowState.innerHTML = '<span></span>Escoando';
+  }
+  els.bundleTotalFlow.textContent = formatValue(fromSI(qTotal, 'flowRate'), 3);
+  updateUnitDisplay(els.bundleTotalFlowUnit, 'flowRate');
+  els.bundlePressure.textContent = formatValue(fromSI(dpTotal, 'pressure'), 3);
+  updateUnitDisplay(els.bundlePressureUnit, 'pressure');
+  els.bundleDuctCountDisplay.textContent = String(geom.N);
+  els.bundlePorosityDisplay.textContent = `${formatValue(geom.porosity * 100, 1)} %`;
+  els.bundleEnvelopeRadius.textContent = formatValue(fromSI(geom.R_env, 'length'), 3);
+  updateUnitDisplay(els.bundleEnvelopeRadiusUnit, 'length');
+  els.bundleDuctVelocity.textContent = formatValue(fromSI(data.meanVelocity, 'velocity'), 3);
+  updateUnitDisplay(els.bundleDuctVelocityUnit, 'velocity');
+  els.bundleWallStress.textContent = formatValue(fromSI(data.tauW, 'pressure'), 3);
+  els.bundlePlasticityIndex.textContent = params.tau0 > 0 ? formatValue(data.Pl, 4) : '0';
+  els.bundleReynoldsHbe.textContent = formatValue(diag.reHbe, 2);
+  els.bundleMach.textContent = formatValue(diag.mach, 3);
+  if (els.bundleWarning) {
+    if (geom.packingWarning) {
+      els.bundleWarning.textContent = 'Aviso: a porosidade solicitada excede o limite de empacotamento hexagonal (~90,7 %). O espaçamento foi ajustado para 2r.';
+      els.bundleWarning.hidden = false;
+    } else {
+      els.bundleWarning.textContent = '';
+      els.bundleWarning.hidden = true;
+    }
+  }
+  if (els.bundlePreviewReadout) {
+    els.bundlePreviewReadout.textContent = `N = ${geom.N} · φ = ${formatValue(geom.porosity * 100, 1)}% · R_env = ${formatValue(fromSI(geom.R_env, 'length'), 3)} ${getUnitLabel('length')}`;
+  }
+  updateBundleInputVisibility();
+}
+
+function drawBundlePreview(geom) {
+  if (!geom || !geom.N || !els.bundleCanvas) return;
+  const { ctx, width, height } = setupCanvas(els.bundleCanvas);
+  ctx.clearRect(0, 0, width, height);
+  const r = geom.r;
+  const R_env = geom.R_env;
+  const centers = geom.centers;
+  const visibleCenters = centers.filter((c) => Math.hypot(c.x, c.y) + r <= R_env + 1e-12);
+  const maxExtent = Math.max(R_env, ...centers.map((c) => Math.hypot(c.x, c.y) + r));
+  const margin = 18;
+  const available = Math.min(width, height) - 2 * margin;
+  const scale = available / (2 * maxExtent);
+  const cx = width / 2;
+  const cy = height / 2;
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, R_env * scale, 0, Math.PI * 2);
+  ctx.strokeStyle = css('--border');
+  ctx.lineWidth = scaledLineWidth(1.5);
+  ctx.stroke();
+
+  const rPx = r * scale;
+  if (geom.N > 2000 || rPx < 0.5) {
+    const path = new Path2D();
+    if (rPx < 0.5) {
+      visibleCenters.forEach((c) => {
+        const x = cx + c.x * scale;
+        const y = cy + c.y * scale;
+        path.rect(x - 0.5, y - 0.5, 1, 1);
+      });
+    } else {
+      visibleCenters.forEach((c) => {
+        const x = cx + c.x * scale;
+        const y = cy + c.y * scale;
+        path.moveTo(x + rPx, y);
+        path.arc(x, y, rPx, 0, Math.PI * 2);
+      });
+    }
+    ctx.fillStyle = css('--cyan');
+    ctx.globalAlpha = 0.35;
+    ctx.fill(path);
+    ctx.globalAlpha = 1;
+  } else {
+    ctx.fillStyle = css('--cyan');
+    visibleCenters.forEach((c) => {
+      const x = cx + c.x * scale;
+      const y = cy + c.y * scale;
+      ctx.beginPath();
+      ctx.arc(x, y, rPx, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+}
+
 function toggleDuctMode() {
-  const isNH = els.ductMode.value === 'nonHomogeneous';
+  const mode = els.ductMode.value;
+  const isNH = mode === 'nonHomogeneous';
+  const isBundle = mode === 'bundle';
   els.radiusField.hidden = isNH;
   els.tubeLengthField.hidden = isNH;
   els.nonHomogeneousGeometry.hidden = !isNH;
-  els.homogeneousDashboard.hidden = isNH;
+  els.bundleGeometry.hidden = !isBundle;
+  els.homogeneousDashboard.hidden = isNH || isBundle;
   els.nonHomogeneousDashboard.hidden = !isNH;
+  els.bundleDashboard.hidden = !isBundle;
   els.geometryUnitLabel.textContent = getUnitLabel('length');
   if (isNH) {
     els.yieldStress.disabled = true;
@@ -873,6 +1130,10 @@ function toggleDuctMode() {
     if (els.yieldStressMax) els.yieldStressMax.textContent = '';
     if (!nhGeometry) generateGeometry();
     else { showNHVisual(nhView || 'profile'); }
+  } else if (isBundle) {
+    els.yieldStress.disabled = false;
+    updateBundleInputVisibility();
+    refresh();
   } else {
     els.yieldStress.disabled = false;
     drawProfileChart();
@@ -1624,12 +1885,32 @@ function animate(timestamp) {
 function refresh() {
   const flowMode = els.flowMode.value;
   const pressureSpecMode = els.pressureSpecMode.value;
-  if (els.ductMode.value === 'nonHomogeneous') {
+  const ductMode = els.ductMode.value;
+  if (ductMode === 'nonHomogeneous') {
     updateControls(getParameters(), { flowMode, pressureSpecMode });
     if (nhGeometry) showNHVisual(nhView || 'profile');
     return;
   }
   let params = getParameters();
+
+  if (ductMode === 'bundle') {
+    const geom = getBundleGeometry(params);
+    syncYieldStressRange(params.R, params.G || defaults.pressureGradient);
+    params.tau0 = readYieldStress();
+    bundleResult = calculateBundle(params, geom);
+    for (let iter = 0; iter < 5; iter += 1) {
+      syncYieldStressRange(params.R, bundleResult.G);
+      const newTau0 = readYieldStress();
+      if (Math.abs(newTau0 - params.tau0) < 1e-12) break;
+      params.tau0 = newTau0;
+      bundleResult = calculateBundle(params, geom);
+    }
+    params.G = bundleResult.G;
+    updateControls(params, { flowMode, pressureSpecMode, pressureDifference: bundleResult.dpTotal });
+    updateBundleMetrics(bundleResult);
+    drawBundlePreview(bundleResult.geom);
+    return;
+  }
 
   if (flowMode === 'pressureGradient') {
     if (pressureSpecMode === 'differential') {
@@ -1659,7 +1940,7 @@ function refresh() {
   updateControls(params, { flowMode, pressureSpecMode, pressureDifference });
   updateMetrics(result, { flowMode, pressureSpecMode });
   updateEquation(result);
-  if (els.ductMode.value === 'nonHomogeneous') {
+  if (ductMode === 'nonHomogeneous') {
     if (nhGeometry) {
       drawDuctProfile();
       drawDuctFlow();
@@ -1686,14 +1967,30 @@ function exportCsv() {
     URL.revokeObjectURL(link.href);
     return;
   }
+  if (els.ductMode.value === 'bundle') {
+    if (!bundleResult) return;
+    const { geom, qTotal, data } = bundleResult;
+    const rows = [
+      `# bundle: N=${geom.N}, porosity=${geom.porosity.toExponential(6)}, A_total_m2=${geom.A_total.toExponential(6)}, Q_total_m3s=${qTotal.toExponential(6)}`,
+      'r_m,r_over_R,velocity_m_per_s,shear_stress_Pa,shear_rate_per_s'
+    ];
+    data.samples.forEach((p) => rows.push([p.r, p.x, p.velocity, p.stress, p.shearRate].join(',')));
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `rheoflow-bundle-${geom.N}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    return;
+  }
   if (!result) return;
   const rows = ['r_m,r_over_R,velocity_m_per_s,shear_stress_Pa,shear_rate_per_s'];
   result.samples.forEach((p) => rows.push([p.r, p.x, p.velocity, p.stress, p.shearRate].join(',')));
   const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });
   const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `rheoflow-${result.params.model}.csv`;
-  link.click();
+    link.href = URL.createObjectURL(blob);
+    link.download = `rheoflow-${result.params.model}.csv`;
+    link.click();
   URL.revokeObjectURL(link.href);
 }
 
@@ -1703,6 +2000,7 @@ function reset() {
   units.velocity = 'm/s';
   units.flowRate = 'm3/d';
   units.density = 'kg/m3';
+  units.area = 'm2';
   updateUnitSelects();
   const md = getModelDefaults(defaults.model);
   els.model.value = defaults.model;
@@ -1730,6 +2028,10 @@ function reset() {
   els.geometryInput.classList.remove('invalid');
   els.subdivisionsInput.value = 20;
   els.profileMode.value = 'linear';
+  els.bundleInputMode.value = 'count';
+  els.bundleDuctCount.value = defaults.bundleDuctCount;
+  els.bundlePorosityInput.value = defaults.bundlePorosity;
+  els.bundleTotalAreaInput.value = Number(defaults.bundleTotalArea.toFixed(6));
   nhGeometry = null;
   nhPaused = false;
   els.nhPauseButton.classList.remove('paused');
@@ -1761,6 +2063,7 @@ function setPanelVisibility() {
   els.workspace.classList.toggle('hide-dashboard', !els.showDashboard.checked);
   requestAnimationFrame(() => {
     if (els.ductMode.value === 'nonHomogeneous') { drawDuctProfile(); drawDuctFlow(); }
+    else if (els.ductMode.value === 'bundle') { if (bundleResult) drawBundlePreview(bundleResult.geom); }
     else { drawProfileChart(); drawFlow(); }
   });
 }
@@ -1770,6 +2073,8 @@ function setFontSize(value) {
   fontScale = value === 'default' ? 1 : value === 'large' ? 1.15 : 1.3;
   if (els.ductMode.value === 'nonHomogeneous') {
     drawDuctProfile(); drawDuctFlow();
+  } else if (els.ductMode.value === 'bundle') {
+    if (bundleResult) drawBundlePreview(bundleResult.geom);
   } else {
     drawProfileChart(); drawFlow();
   }
@@ -1780,6 +2085,8 @@ function setLineWidth(value) {
   lineWidthScale = value === 'default' ? 1 : value === 'thick' ? 1.5 : 2;
   if (els.ductMode.value === 'nonHomogeneous') {
     drawDuctProfile(); drawDuctFlow();
+  } else if (els.ductMode.value === 'bundle') {
+    if (bundleResult) drawBundlePreview(bundleResult.geom);
   } else {
     drawProfileChart(); drawFlow();
   }
@@ -1802,7 +2109,7 @@ function updateUnitSelects() {
 }
 
 function applyUnits(oldUnits = {}) {
-  const newUnits = { pressure: units.pressure, length: units.length, velocity: units.velocity, flowRate: units.flowRate, density: units.density };
+  const newUnits = { pressure: units.pressure, length: units.length, velocity: units.velocity, flowRate: units.flowRate, density: units.density, area: units.area };
   Object.assign(units, oldUnits);
   const toSIInput = (input, dimension) => {
     if (!input) return undefined;
@@ -1817,7 +2124,8 @@ function applyUnits(oldUnits = {}) {
     soundSpeed: toSIInput(els.soundSpeed, 'velocity'),
     pressureGradient: toSIInput(els.pressureGradientInput, 'pressureGradient'),
     pressureDifference: toSIInput(els.pressureDifference, 'pressure'),
-    flowRate: toSIInput(els.flowRateInput, 'flowRate')
+    flowRate: toSIInput(els.flowRateInput, 'flowRate'),
+    bundleTotalArea: toSIInput(els.bundleTotalAreaInput, 'area')
   };
   Object.assign(units, newUnits);
   updateUnitSelects();
@@ -1828,6 +2136,7 @@ function applyUnits(oldUnits = {}) {
   if (si.pressureGradient !== undefined) setInputValue(els.pressureGradientInput, fromSI(si.pressureGradient, 'pressureGradient'));
   if (si.pressureDifference !== undefined) setInputValue(els.pressureDifference, fromSI(si.pressureDifference, 'pressure'));
   if (si.flowRate !== undefined) setInputValue(els.flowRateInput, fromSI(si.flowRate, 'flowRate'));
+  if (si.bundleTotalArea !== undefined) setInputValue(els.bundleTotalAreaInput, fromSI(si.bundleTotalArea, 'area'));
 
   if (els.ductMode.value === 'nonHomogeneous' && nhGeometry) {
     const lines = nhGeometry.points.map((p) => `${formatNumeric(fromSI(p.x, 'length'))} ${formatNumeric(fromSI(p.r, 'length'))}`);
@@ -1844,7 +2153,7 @@ function setupUnits() {
     select.addEventListener('change', () => {
       const dimension = select.dataset.dimension;
       if (!dimension || !units[dimension]) return;
-      const oldUnits = { pressure: units.pressure, length: units.length, velocity: units.velocity, flowRate: units.flowRate, density: units.density };
+      const oldUnits = { pressure: units.pressure, length: units.length, velocity: units.velocity, flowRate: units.flowRate, density: units.density, area: units.area };
       units[dimension] = select.value;
       applyUnits(oldUnits);
     });
@@ -1886,8 +2195,9 @@ clampOnBlur(els.yieldStressNumber, false);
 
 $$('input, select:not(.unit-select)').forEach((input) => input.addEventListener('input', refresh));
 window.addEventListener('resize', () => {
-  [els.flowCanvas, els.profileCanvas, els.ductProfileCanvas, els.ductFlowCanvas].forEach((c) => { if (c) c._rheoRect = null; });
+  [els.flowCanvas, els.profileCanvas, els.ductProfileCanvas, els.ductFlowCanvas, els.bundleCanvas].forEach((c) => { if (c) c._rheoRect = null; });
   if (els.ductMode.value === 'nonHomogeneous') { if (nhView === 'profile') drawDuctProfile(); else drawDuctFlow(0); }
+  else if (els.ductMode.value === 'bundle') { if (bundleResult) drawBundlePreview(bundleResult.geom); }
   else { drawProfileChart(); drawFlow(); }
 });
 els.profileCanvas.addEventListener('pointermove', handleProfilePointer);
@@ -1901,6 +2211,7 @@ els.themeButton.addEventListener('click', () => {
   const root = document.documentElement;
   root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light';
   if (els.ductMode.value === 'nonHomogeneous') { drawDuctProfile(); drawDuctFlow(); }
+  else if (els.ductMode.value === 'bundle') { if (bundleResult) drawBundlePreview(bundleResult.geom); }
   else { drawProfileChart(); drawFlow(); }
 });
 els.resetButton.addEventListener('click', reset);
@@ -1950,3 +2261,8 @@ setupAccessibility();
 window.addEventListener('load', () => updateEquation(result));
 cancelAnimationFrame(animationFrame);
 animationFrame = requestAnimationFrame(animate);
+
+if (typeof window !== 'undefined') {
+  window.els = els;
+  window.defaults = defaults;
+}

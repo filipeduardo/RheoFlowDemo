@@ -6,6 +6,23 @@ const virtualConsole = new (require('jsdom').VirtualConsole)();
 virtualConsole.on('error', () => {});
 virtualConsole.on('warn', () => {});
 
+function createMockContext() {
+  const handler = {
+    get(target, prop) {
+      if (prop === 'canvas') return null;
+      if (['setTransform', 'resetTransform', 'clearRect', 'fillRect', 'strokeRect', 'beginPath', 'moveTo', 'lineTo', 'arc', 'rect', 'stroke', 'fill', 'fillText', 'strokeText', 'clip', 'save', 'restore', 'closePath', 'setLineDash', 'translate', 'rotate', 'scale'].includes(prop)) {
+        return (...args) => handler;
+      }
+      if (prop === 'createLinearGradient') return () => ({ addColorStop: () => {} });
+      if (prop === 'measureText') return () => ({ width: 0 });
+      if (prop in target) return target[prop];
+      return '';
+    },
+    set(target, prop, value) { target[prop] = value; return true; }
+  };
+  return new Proxy({}, handler);
+}
+
 const repoRoot = path.resolve(__dirname, '..');
 const htmlPath = path.join(repoRoot, 'index.html');
 let html = fs.readFileSync(htmlPath, 'utf8');
@@ -16,14 +33,32 @@ const dom = new JSDOM(html, {
   runScripts: 'dangerously',
   resources: 'usable',
   pretendToBeVisual: true,
-  virtualConsole
+  virtualConsole,
+  beforeParse(window) {
+    window.HTMLCanvasElement.prototype.getContext = function(type) {
+      if (type === '2d') return createMockContext();
+      return null;
+    };
+    if (!window.Path2D) {
+      window.Path2D = class MockPath2D {
+        moveTo() {}
+        arc() {}
+        rect() {}
+      };
+    }
+  }
 });
 
 const win = dom.window;
 
 function ready(fn) {
-  if (win.document.readyState === 'complete') return fn();
-  win.addEventListener('load', fn);
+  if (win.document.readyState === 'complete') return setTimeout(fn, 0);
+  const iv = setInterval(() => {
+    if (win.document.readyState === 'complete') {
+      clearInterval(iv);
+      fn();
+    }
+  }, 10);
 }
 
 function assert(condition, message) {
@@ -125,6 +160,57 @@ ready(() => {
     const ri = win.radiusAt(pchipPoints, xi, 'cubic');
     assert(ri >= 0.019 && ri <= 0.05, `PCHIP radius out of bounds at x=${xi}: ${ri}`);
   }
+
+  // Bundle geometry invariants.
+  const h1 = win.hexLattice(1, 1);
+  assert(h1.length === 1 && Math.abs(h1[0].x) < 1e-12 && Math.abs(h1[0].y) < 1e-12, 'hexLattice N=1 at origin');
+  const h7 = win.hexLattice(7, 1);
+  assert(h7.length === 7, 'hexLattice N=7 returns 7 centers');
+  const h7max = Math.max(...h7.map((c) => Math.hypot(c.x, c.y)));
+  assert(h7max <= 1 + 1e-12, 'hexLattice N=7 max distance is spacing');
+
+  win.els.bundleInputMode.value = 'count';
+  win.els.bundleDuctCount.value = '7';
+  win.els.radius.value = '0.05';
+  const geom7 = win.getBundleGeometry({ R: 0.05 });
+  assert(geom7.N === 7, 'count mode N=7');
+  assert(Math.abs(geom7.R_env - 0.15) < 1e-9, `count mode R_env = 3r: ${geom7.R_env}`);
+  assert(Math.abs(geom7.porosity - (7 * Math.PI * 0.05 * 0.05) / (Math.PI * 0.15 * 0.15)) < 1e-9, 'count mode porosity');
+
+  win.els.bundleInputMode.value = 'porosity';
+  win.els.bundlePorosityInput.value = '0.15';
+  win.els.bundleTotalAreaInput.value = '0.1963';
+  const geomPor = win.getBundleGeometry({ R: 0.05 });
+  assert(geomPor.N >= 1 && geomPor.N <= 100000, 'porosity mode N in range');
+  assert(Math.abs(geomPor.R_env - Math.sqrt(0.1963 / Math.PI)) < 1e-9, 'porosity mode R_env from A_total');
+  assert(Math.abs(geomPor.porosity - (geomPor.N * Math.PI * 0.05 * 0.05) / 0.1963) < 0.02, 'porosity mode effective porosity');
+
+  win.els.bundlePorosityInput.value = '0.95';
+  win.els.bundleTotalAreaInput.value = '0.1';
+  const geomHigh = win.getBundleGeometry({ R: 0.05 });
+  assert(geomHigh.packingWarning, 'high porosity triggers packing warning');
+
+  // Newtonian bundle: Q_total = N * π G r^4 / (8 μ).
+  const bundleParams = { ...base, G: 120, R: 0.05, tubeLength: 0.5 };
+  win.els.bundleInputMode.value = 'count';
+  win.els.bundleDuctCount.value = '7';
+  const geomB = win.getBundleGeometry(bundleParams);
+  const bundle = win.calculateBundle(bundleParams, geomB);
+  const expectedQ = 7 * (Math.PI * 120 * Math.pow(0.05, 4) / (8 * 0.001));
+  assert(Math.abs(bundle.qTotal - expectedQ) / expectedQ < 1e-9, `Newtonian bundle Q_total ${bundle.qTotal} vs ${expectedQ}`);
+
+  // Fixed-Q round-trip.
+  const qDuct = expectedQ / 7;
+  const solvedG = win.solveForG(qDuct, { ...bundleParams, R: 0.05, G: 120 }, 1e-6, 120);
+  assert(Math.abs(solvedG - 120) / 120 < 1e-6, 'fixed-Q round-trip G');
+
+  // Bundle Δp laminar.
+  const lamG2 = (8 * 0.001 * 0.01) / (0.05 * 0.05);
+  const lamParams = { ...base, G: lamG2, R: 0.05, tubeLength: 0.5 };
+  win.els.bundleDuctCount.value = '3';
+  const geomLam = win.getBundleGeometry(lamParams);
+  const bundleLam = win.calculateBundle(lamParams, geomLam);
+  assert(Math.abs(bundleLam.dpTotal - lamG2 * 0.5) < 1e-9, 'bundle laminar Δp = G L');
 
   if (process.exitCode) {
     console.error('Some assertions failed.');
