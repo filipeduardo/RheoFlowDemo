@@ -379,7 +379,11 @@ const els = {
   bundleMach: $('#bundleMach'),
   bundleCanvas: $('#bundleCanvas'),
   bundlePreviewReadout: $('#bundlePreviewReadout'),
-  bundleWarning: $('#bundleWarning')
+  bundleWarning: $('#bundleWarning'),
+  generateBundleButton: $('#generateBundleButton'),
+  calculateBundleButton: $('#calculateBundleButton'),
+  bundleGeometryPanel: $('#bundleGeometryPanel'),
+  bundleResultPanel: $('#bundleResultPanel')
 };
 
 let result = null;
@@ -396,6 +400,8 @@ let nhFlowTime = 0;
 let nhParticles = [];
 let nhView = 'profile';
 let bundleResult = null;
+let bundleGeometry = null;
+let bundleView = null;
 let displaySciDigits = 2;
 
 function readPositive(input, fallback) {
@@ -1058,8 +1064,90 @@ function updateBundleMetrics(bundle) {
   updateBundleInputVisibility();
 }
 
+function updateBundleGeometryReadout(geom) {
+  if (!geom || !els.bundlePreviewReadout) return;
+  els.bundlePreviewReadout.textContent = `N = ${geom.N} · φ = ${formatValue(geom.porosity * 100, 1)}% · R_env = ${formatValue(fromSI(geom.R_env, 'length'), 3)} ${getUnitLabel('length')}`;
+  if (els.bundleWarning) {
+    if (geom.packingWarning) {
+      els.bundleWarning.textContent = 'Aviso: a porosidade solicitada excede o limite de empacotamento hexagonal (~90,7 %). O espaçamento foi ajustado para 2r.';
+      els.bundleWarning.hidden = false;
+    } else {
+      els.bundleWarning.textContent = '';
+      els.bundleWarning.hidden = true;
+    }
+  }
+}
+
+function showBundleView(view) {
+  bundleView = view;
+  if (els.bundleGeometryPanel) els.bundleGeometryPanel.hidden = view !== 'geometry';
+  if (els.bundleResultPanel) els.bundleResultPanel.hidden = view !== 'results';
+}
+
+function updateBundleButtons() {
+  if (!els.generateBundleButton || !els.calculateBundleButton) return;
+  const geometryReady = !!bundleGeometry;
+  const resultsReady = !!bundleResult;
+  els.generateBundleButton.textContent = geometryReady ? 'Geometria' : 'Gerar geometria';
+  els.generateBundleButton.disabled = false;
+  els.calculateBundleButton.disabled = !geometryReady;
+  els.calculateBundleButton.textContent = resultsReady ? 'Resultado' : 'Calcular';
+}
+
+function markBundleGeometryDirty() {
+  bundleGeometry = null;
+  bundleResult = null;
+  showBundleView(null);
+  updateBundleButtons();
+}
+
+function markBundleResultsDirty() {
+  bundleResult = null;
+  if (bundleView === 'results') showBundleView(null);
+  updateBundleButtons();
+}
+
+function generateBundleGeometry() {
+  const params = getParameters();
+  bundleGeometry = getBundleGeometry(params);
+  bundleResult = null;
+  showBundleView('geometry');
+  updateBundleGeometryReadout(bundleGeometry);
+  updateBundleButtons();
+  requestAnimationFrame(() => { if (bundleGeometry && els.bundleCanvas) drawBundlePreview(bundleGeometry); });
+}
+
+function calculateBundleFlow() {
+  if (!bundleGeometry) return;
+  const flowMode = els.flowMode.value;
+  const pressureSpecMode = els.pressureSpecMode.value;
+  let params = getParameters();
+  syncYieldStressRange(bundleGeometry.r, params.G || defaults.pressureGradient);
+  let tau0 = readYieldStress();
+  let bundle = null;
+  for (let iter = 0; iter < 5; iter += 1) {
+    bundle = calculateBundle({ ...params, tau0 }, bundleGeometry);
+    syncYieldStressRange(bundleGeometry.r, bundle.G);
+    const newTau0 = readYieldStress();
+    if (Math.abs(newTau0 - tau0) < 1e-12) break;
+    tau0 = newTau0;
+  }
+  bundle = calculateBundle({ ...params, tau0 }, bundleGeometry);
+  bundleResult = bundle;
+  params.tau0 = tau0;
+  params.G = bundle.G;
+  updateControls(params, { flowMode, pressureSpecMode, pressureDifference: bundle.dpTotal });
+  updateBundleMetrics(bundle);
+  updateBundleButtons();
+  showBundleView('results');
+}
+
 function drawBundlePreview(geom) {
   if (!geom || !geom.N || !els.bundleCanvas) return;
+  if (els.bundleGeometryPanel && els.bundleGeometryPanel.hidden) {
+    els.bundleCanvas._rheoRect = null;
+    return;
+  }
   const { ctx, width, height } = setupCanvas(els.bundleCanvas);
   ctx.clearRect(0, 0, width, height);
   const r = geom.r;
@@ -1069,6 +1157,7 @@ function drawBundlePreview(geom) {
   const maxExtent = Math.max(R_env, ...centers.map((c) => Math.hypot(c.x, c.y) + r));
   const margin = 18;
   const available = Math.min(width, height) - 2 * margin;
+  if (available <= 0) return;
   const scale = available / (2 * maxExtent);
   const cx = width / 2;
   const cy = height / 2;
@@ -1134,6 +1223,7 @@ function toggleDuctMode() {
     els.yieldStress.disabled = false;
     updateBundleInputVisibility();
     refresh();
+    if (bundleGeometry) showBundleView(bundleView || 'geometry');
   } else {
     els.yieldStress.disabled = false;
     drawProfileChart();
@@ -1894,21 +1984,13 @@ function refresh() {
   let params = getParameters();
 
   if (ductMode === 'bundle') {
-    const geom = getBundleGeometry(params);
-    syncYieldStressRange(params.R, params.G || defaults.pressureGradient);
-    params.tau0 = readYieldStress();
-    bundleResult = calculateBundle(params, geom);
-    for (let iter = 0; iter < 5; iter += 1) {
-      syncYieldStressRange(params.R, bundleResult.G);
-      const newTau0 = readYieldStress();
-      if (Math.abs(newTau0 - params.tau0) < 1e-12) break;
-      params.tau0 = newTau0;
-      bundleResult = calculateBundle(params, geom);
+    updateControls(getParameters(), { flowMode, pressureSpecMode });
+    updateBundleInputVisibility();
+    updateBundleButtons();
+    if (bundleGeometry) {
+      drawBundlePreview(bundleGeometry);
+      updateBundleGeometryReadout(bundleGeometry);
     }
-    params.G = bundleResult.G;
-    updateControls(params, { flowMode, pressureSpecMode, pressureDifference: bundleResult.dpTotal });
-    updateBundleMetrics(bundleResult);
-    drawBundlePreview(bundleResult.geom);
     return;
   }
 
@@ -2032,10 +2114,18 @@ function reset() {
   els.bundleDuctCount.value = defaults.bundleDuctCount;
   els.bundlePorosityInput.value = defaults.bundlePorosity;
   els.bundleTotalAreaInput.value = Number(defaults.bundleTotalArea.toFixed(6));
+  bundleGeometry = null;
+  bundleResult = null;
+  showBundleView(null);
+  updateBundleButtons();
   nhGeometry = null;
   nhPaused = false;
   els.nhPauseButton.classList.remove('paused');
   els.nhAnimationLabel.textContent = 'Animação ativa';
+  if (els.bundleFlowState) {
+    els.bundleFlowState.classList.remove('stopped', 'turbulent', 'supersonic');
+    els.bundleFlowState.innerHTML = '<span></span>Aguardando cálculo';
+  }
   toggleDuctMode();
   refresh();
 }
@@ -2063,7 +2153,7 @@ function setPanelVisibility() {
   els.workspace.classList.toggle('hide-dashboard', !els.showDashboard.checked);
   requestAnimationFrame(() => {
     if (els.ductMode.value === 'nonHomogeneous') { drawDuctProfile(); drawDuctFlow(); }
-    else if (els.ductMode.value === 'bundle') { if (bundleResult) drawBundlePreview(bundleResult.geom); }
+    else if (els.ductMode.value === 'bundle') { if (bundleGeometry) drawBundlePreview(bundleGeometry); }
     else { drawProfileChart(); drawFlow(); }
   });
 }
@@ -2074,7 +2164,7 @@ function setFontSize(value) {
   if (els.ductMode.value === 'nonHomogeneous') {
     drawDuctProfile(); drawDuctFlow();
   } else if (els.ductMode.value === 'bundle') {
-    if (bundleResult) drawBundlePreview(bundleResult.geom);
+    if (bundleGeometry) drawBundlePreview(bundleGeometry);
   } else {
     drawProfileChart(); drawFlow();
   }
@@ -2086,7 +2176,7 @@ function setLineWidth(value) {
   if (els.ductMode.value === 'nonHomogeneous') {
     drawDuctProfile(); drawDuctFlow();
   } else if (els.ductMode.value === 'bundle') {
-    if (bundleResult) drawBundlePreview(bundleResult.geom);
+    if (bundleGeometry) drawBundlePreview(bundleGeometry);
   } else {
     drawProfileChart(); drawFlow();
   }
@@ -2144,6 +2234,10 @@ function applyUnits(oldUnits = {}) {
     generateGeometry();
     if (nhGeometry) calculateNonHomogeneous();
   }
+  if (els.ductMode.value === 'bundle' && bundleGeometry) {
+    generateBundleGeometry();
+    if (bundleGeometry) calculateBundleFlow();
+  }
   refresh();
 }
 
@@ -2193,11 +2287,22 @@ clampOnBlur(els.yieldStressNumber, false);
 
 [els.radius, els.tubeLength, els.pressureGradientInput, els.pressureDifference, els.flowRateInput, els.density, els.soundSpeed].forEach((input) => clampOnBlur(input, false));
 
-$$('input, select:not(.unit-select)').forEach((input) => input.addEventListener('input', refresh));
+$$('input, select:not(.unit-select)').forEach((input) => {
+  input.addEventListener('input', () => {
+    if (els.ductMode.value === 'bundle') {
+      if (input === els.bundleDuctCount || input === els.bundlePorosityInput || input === els.bundleTotalAreaInput || input === els.radius) {
+        markBundleGeometryDirty();
+      } else if (input !== els.bundleInputMode && input !== els.ductMode) {
+        markBundleResultsDirty();
+      }
+    }
+    refresh();
+  });
+});
 window.addEventListener('resize', () => {
   [els.flowCanvas, els.profileCanvas, els.ductProfileCanvas, els.ductFlowCanvas, els.bundleCanvas].forEach((c) => { if (c) c._rheoRect = null; });
   if (els.ductMode.value === 'nonHomogeneous') { if (nhView === 'profile') drawDuctProfile(); else drawDuctFlow(0); }
-  else if (els.ductMode.value === 'bundle') { if (bundleResult) drawBundlePreview(bundleResult.geom); }
+  else if (els.ductMode.value === 'bundle') { if (bundleGeometry) drawBundlePreview(bundleGeometry); }
   else { drawProfileChart(); drawFlow(); }
 });
 els.profileCanvas.addEventListener('pointermove', handleProfilePointer);
@@ -2211,7 +2316,7 @@ els.themeButton.addEventListener('click', () => {
   const root = document.documentElement;
   root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light';
   if (els.ductMode.value === 'nonHomogeneous') { drawDuctProfile(); drawDuctFlow(); }
-  else if (els.ductMode.value === 'bundle') { if (bundleResult) drawBundlePreview(bundleResult.geom); }
+  else if (els.ductMode.value === 'bundle') { if (bundleGeometry) drawBundlePreview(bundleGeometry); }
   else { drawProfileChart(); drawFlow(); }
 });
 els.resetButton.addEventListener('click', reset);
@@ -2226,6 +2331,21 @@ els.calculateDuctButton.addEventListener('click', () => {
   if (!nhGeometry.calculated || nhGeometry.resultsDirty) calculateNonHomogeneous();
   else showNHVisual('flow');
 });
+els.generateBundleButton.addEventListener('click', () => {
+  if (bundleGeometry && bundleView !== 'geometry') {
+    showBundleView('geometry');
+    if (els.bundleCanvas) els.bundleCanvas._rheoRect = null;
+    requestAnimationFrame(() => { if (bundleGeometry && els.bundleCanvas) drawBundlePreview(bundleGeometry); });
+  } else {
+    generateBundleGeometry();
+  }
+});
+els.calculateBundleButton.addEventListener('click', () => {
+  if (!bundleGeometry) return;
+  if (!bundleResult || bundleView !== 'results') calculateBundleFlow();
+  else showBundleView('results');
+});
+els.bundleInputMode.addEventListener('change', () => { markBundleGeometryDirty(); updateBundleInputVisibility(); refresh(); });
 els.geometryInput.addEventListener('input', () => {
   sanitizeGeometryInput();
   els.geometryInput.classList.remove('invalid');
@@ -2233,9 +2353,9 @@ els.geometryInput.addEventListener('input', () => {
 });
 els.profileMode.addEventListener('change', () => { if (els.ductMode.value === 'nonHomogeneous') generateGeometry(); });
 els.subdivisionsInput.addEventListener('input', () => { if (els.ductMode.value === 'nonHomogeneous') generateGeometry(); });
-els.flowMode.addEventListener('change', () => { if (els.ductMode.value === 'nonHomogeneous') markResultsDirty(); refresh(); });
-els.pressureSpecMode.addEventListener('change', () => { if (els.ductMode.value === 'nonHomogeneous') markResultsDirty(); refresh(); });
-els.model.addEventListener('change', markResultsDirty);
+els.flowMode.addEventListener('change', () => { if (els.ductMode.value === 'nonHomogeneous') markResultsDirty(); else if (els.ductMode.value === 'bundle') markBundleResultsDirty(); refresh(); });
+els.pressureSpecMode.addEventListener('change', () => { if (els.ductMode.value === 'nonHomogeneous') markResultsDirty(); else if (els.ductMode.value === 'bundle') markBundleResultsDirty(); refresh(); });
+els.model.addEventListener('change', () => { markResultsDirty(); if (els.ductMode.value === 'bundle') markBundleResultsDirty(); });
 [els.density, els.soundSpeed, els.flowRateInput, els.pressureGradientInput, els.pressureDifference, els.radius, els.tubeLength].forEach((input) => {
   input.addEventListener('input', markResultsDirty);
 });

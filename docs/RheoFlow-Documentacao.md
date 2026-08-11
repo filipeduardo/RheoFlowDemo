@@ -456,10 +456,15 @@ O modo **Feixe de dutos** trata `N` dutos circulares idênticos dispostos em par
 - `Q_total`, `Δp`, `N`, `φ_eff`, `R_env`, `U_duto`.
 - Diagnósticos por duto: `τ_w`, `Pl`, `Re_HBE`, `Ma`.
 - Visualização da seção transversal com o envelope e os dutos.
+- Fluxo de uso: **Gerar geometria** gera e mostra o empacotamento; **Calcular** resolve o escoamento e mostra os resultados. Depois dos dois passos os botões tornam-se alternâncias entre `Geometria` e `Resultado`. Mudar qualquer entrada de geometria invalida a geometria; mudar parâmetros de escoamento invalida apenas o resultado.
 
 ### 8.5 Exportação CSV
 
 O CSV do feixe (`rheoflow-bundle-<N>.csv`) contém uma linha de comentário com `N`, `φ_eff`, `A_total` e `Q_total`, seguida do perfil radial por duto: `r_m, r_over_R, velocity_m_per_s, shear_stress_Pa, shear_rate_per_s`.
+
+### 8.6 Extensão futura (não implementada)
+
+O raio dos dutos pode, no futuro, ser descrito por uma distribuição (média, desvio padrão e seed), permitindo múltiplas realizações estocásticas do feixe. A interface atual deixa um comentário nesse sentido, mas todos os dutos ainda compartilham o mesmo `r`.
 
 ## 9. Visualização
 
