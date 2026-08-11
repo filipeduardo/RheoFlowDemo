@@ -457,10 +457,15 @@ The **Bundle of ducts** mode models `N` identical circular ducts arranged in par
 - `Q_total`, `Δp`, `N`, `φ_eff`, `R_env`, `U_duct`.
 - Per-duct diagnostics: `τ_w`, `Pl`, `Re_HBE`, `Ma`.
 - Cross-section preview with the envelope and ducts.
+- Interaction flow: **Gerar geometria** generates and displays the packing; **Calcular** solves the flow and displays the results. After both steps the buttons become toggles between `Geometria` and `Resultado`. Changing any geometry input invalidates the geometry; changing flow parameters invalidates only the result.
 
 ### 8.5 CSV Export
 
 The bundle CSV (`rheoflow-bundle-<N>.csv`) contains a comment line with `N`, `φ_eff`, `A_total`, and `Q_total`, followed by the per-duct radial profile: `r_m, r_over_R, velocity_m_per_s, shear_stress_Pa, shear_rate_per_s`.
+
+### 8.6 Future extension (not implemented)
+
+The duct radius may later be described by a distribution (mean, standard deviation, and seed), allowing stochastic realizations of the bundle. The current UI includes a note about this, but all ducts still share the same `r`.
 
 ## 9. Visualization
 

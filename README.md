@@ -311,6 +311,7 @@ O modo **Feixe de dutos** trata `N` dutos circulares idênticos dispostos em par
 - `Q_total`, `Δp`, `N`, `φ_eff`, `R_env`, `U_duto`.
 - Diagnósticos por duto: `τ_w`, `Pl`, `Re_HBE`, `Ma`.
 - Visualização da seção transversal com o envelope e os dutos.
+- Fluxo de uso: **Gerar geometria** gera e mostra o empacotamento; **Calcular** resolve o escoamento e mostra os resultados. Depois dos dois passos os botões tornam-se alternâncias entre `Geometria` e `Resultado`. Mudar qualquer entrada de geometria invalida a geometria; mudar parâmetros de escoamento invalida apenas o resultado.
 
 ### 8.5 Exportação CSV
 
