@@ -1134,6 +1134,7 @@ function calculateBundleFlow() {
   }
   bundle = calculateBundle({ ...params, tau0 }, bundleGeometry);
   bundleResult = bundle;
+  params.tau0 = tau0;
   params.G = bundle.G;
   updateControls(params, { flowMode, pressureSpecMode, pressureDifference: bundle.dpTotal });
   updateBundleMetrics(bundle);
@@ -1143,6 +1144,10 @@ function calculateBundleFlow() {
 
 function drawBundlePreview(geom) {
   if (!geom || !geom.N || !els.bundleCanvas) return;
+  if (els.bundleGeometryPanel && els.bundleGeometryPanel.hidden) {
+    els.bundleCanvas._rheoRect = null;
+    return;
+  }
   const { ctx, width, height } = setupCanvas(els.bundleCanvas);
   ctx.clearRect(0, 0, width, height);
   const r = geom.r;
@@ -2111,10 +2116,16 @@ function reset() {
   els.bundleTotalAreaInput.value = Number(defaults.bundleTotalArea.toFixed(6));
   bundleGeometry = null;
   bundleResult = null;
+  showBundleView(null);
+  updateBundleButtons();
   nhGeometry = null;
   nhPaused = false;
   els.nhPauseButton.classList.remove('paused');
   els.nhAnimationLabel.textContent = 'Animação ativa';
+  if (els.bundleFlowState) {
+    els.bundleFlowState.classList.remove('stopped', 'turbulent', 'supersonic');
+    els.bundleFlowState.innerHTML = '<span></span>Aguardando cálculo';
+  }
   toggleDuctMode();
   refresh();
 }
@@ -2142,7 +2153,7 @@ function setPanelVisibility() {
   els.workspace.classList.toggle('hide-dashboard', !els.showDashboard.checked);
   requestAnimationFrame(() => {
     if (els.ductMode.value === 'nonHomogeneous') { drawDuctProfile(); drawDuctFlow(); }
-    else if (els.ductMode.value === 'bundle') { if (bundleResult) drawBundlePreview(bundleResult.geom); }
+    else if (els.ductMode.value === 'bundle') { if (bundleGeometry) drawBundlePreview(bundleGeometry); }
     else { drawProfileChart(); drawFlow(); }
   });
 }
@@ -2281,7 +2292,7 @@ $$('input, select:not(.unit-select)').forEach((input) => {
     if (els.ductMode.value === 'bundle') {
       if (input === els.bundleDuctCount || input === els.bundlePorosityInput || input === els.bundleTotalAreaInput || input === els.radius) {
         markBundleGeometryDirty();
-      } else if (input !== els.bundleInputMode) {
+      } else if (input !== els.bundleInputMode && input !== els.ductMode) {
         markBundleResultsDirty();
       }
     }
@@ -2321,8 +2332,13 @@ els.calculateDuctButton.addEventListener('click', () => {
   else showNHVisual('flow');
 });
 els.generateBundleButton.addEventListener('click', () => {
-  if (bundleGeometry && bundleView !== 'geometry') showBundleView('geometry');
-  else generateBundleGeometry();
+  if (bundleGeometry && bundleView !== 'geometry') {
+    showBundleView('geometry');
+    if (els.bundleCanvas) els.bundleCanvas._rheoRect = null;
+    requestAnimationFrame(() => { if (bundleGeometry && els.bundleCanvas) drawBundlePreview(bundleGeometry); });
+  } else {
+    generateBundleGeometry();
+  }
 });
 els.calculateBundleButton.addEventListener('click', () => {
   if (!bundleGeometry) return;
