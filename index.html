@@ -88,6 +88,7 @@
             <select id="ductMode">
               <option value="homogeneous" selected>Homogêneo</option>
               <option value="nonHomogeneous">Não homogêneo</option>
+              <option value="bundle">Feixe de dutos</option>
             </select>
             <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg>
           </div>
@@ -190,6 +191,33 @@
           <div class="nh-actions">
             <button class="button primary" id="generateGeometryButton" type="button">Gerar geometria</button>
             <button class="button primary" id="calculateDuctButton" type="button" disabled>Calcular</button>
+          </div>
+        </section>
+
+        <section class="control-section" id="bundleGeometry" hidden>
+          <h2>Feixe de dutos</h2>
+          <label class="field-label" for="bundleInputMode">Modo de entrada</label>
+          <div class="select-wrap">
+            <select id="bundleInputMode">
+              <option value="count" selected>Número de dutos</option>
+              <option value="porosity">Porosidade</option>
+            </select>
+            <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg>
+          </div>
+          <p class="model-description">Apenas a área interna dos dutos conduz o escoamento.</p>
+          <div class="control-grid">
+            <label class="number-field" id="bundleDuctCountField">
+              <span>Número de dutos <span class="math">N</span></span>
+              <span class="input-row"><input id="bundleDuctCount" type="number" min="1" max="100000" step="1" value="19"></span>
+            </label>
+            <label class="number-field" id="bundlePorosityField" hidden>
+              <span>Porosidade <span class="math">φ</span></span>
+              <span class="input-row"><input id="bundlePorosityInput" type="number" min="0.01" max="0.99" step="0.01" value="0.15"></span>
+            </label>
+            <label class="number-field" id="bundleTotalAreaField" hidden>
+              <span>Área total do envelope <span class="math">A</span></span>
+              <span class="input-row"><input id="bundleTotalAreaInput" type="number" min="0.000001" step="0.01" value="0.1963"><select class="unit-select" data-dimension="area" aria-label="Unidade de área"><option value="m2" selected>m²</option><option value="ft2">ft²</option><option value="in2">in²</option></select></span>
+            </label>
           </div>
         </section>
 
@@ -454,6 +482,69 @@
             </div>
           </details>
           <p class="assumption-note">Duto não homogêneo: integração axial por subseções cilíndricas de raio constante.</p>
+        </div>
+
+        <div id="bundleDashboard" hidden>
+          <div class="dashboard-head">
+            <div>
+              <span class="eyebrow">Resultado do feixe</span>
+              <h2>Feixe de dutos paralelos</h2>
+            </div>
+            <div class="flow-state" id="bundleFlowState"><span></span>Escoando</div>
+          </div>
+
+          <div class="metric-grid">
+            <article class="metric-card accent-violet">
+              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 12h16m-5-5 5 5-5 5"/></svg></div>
+              <div><span>Vazão total <span class="math">Q<sub>tot</sub></span></span><strong id="bundleTotalFlow">—</strong><select id="bundleTotalFlowUnit" class="unit-select" data-dimension="flowRate" aria-label="Unidade de vazão"><option value="m3/d" selected>m³/d</option><option value="bbl/d">bbl/d</option><option value="MMSCFD">MMSCFD</option><option value="GPM">GPM</option></select></div>
+            </article>
+            <article class="metric-card accent-amber">
+              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M7 8l5-5 5 5M7 16l5 5 5-5"/></svg></div>
+              <div><span>Diferencial de pressão <span class="math">Δp</span></span><strong id="bundlePressure">—</strong><select id="bundlePressureUnit" class="unit-select" data-dimension="pressure" aria-label="Unidade de pressão"><option value="Pa" selected>Pa</option><option value="kPa">kPa</option><option value="psi">psi</option></select></div>
+            </article>
+            <article class="metric-card accent-cyan">
+              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M5 19c4-11 10-11 14 0M8 14h8"/></svg></div>
+              <div><span>Número de dutos <span class="math">N</span></span><strong id="bundleDuctCountDisplay">—</strong></div>
+            </article>
+            <article class="metric-card accent-blue">
+              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10Zm0-15v10"/></svg></div>
+              <div><span>Porosidade efetiva <span class="math">φ</span></span><strong id="bundlePorosityDisplay">—</strong></div>
+            </article>
+            <article class="metric-card accent-cyan">
+              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M7 8l5-5 5 5M7 16 12 21 17 16"/></svg></div>
+              <div><span>Raio do envelope <span class="math">R<sub>env</sub></span></span><strong id="bundleEnvelopeRadius">—</strong><select id="bundleEnvelopeRadiusUnit" class="unit-select" data-dimension="length" aria-label="Unidade de comprimento"><option value="m" selected>m</option><option value="ft">ft</option><option value="in">in</option></select></div>
+            </article>
+            <article class="metric-card accent-violet">
+              <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 18V6m5 12V9m5 9V4m5 14v-7"/></svg></div>
+              <div><span>Velocidade por duto <span class="math">U</span></span><strong id="bundleDuctVelocity">—</strong><select id="bundleDuctVelocityUnit" class="unit-select" data-dimension="velocity" aria-label="Unidade de velocidade"><option value="m/s" selected>m/s</option><option value="ft/s">ft/s</option><option value="in/s">in/s</option></select></div>
+            </article>
+          </div>
+
+          <div class="nh-visual-grid">
+            <article class="card nh-visual-card">
+              <div class="card-header">
+                <div><span class="card-kicker">Vista da seção transversal</span><h3>Geometria do feixe</h3></div>
+              </div>
+              <div class="nh-canvas-stack bundle-preview-wrap">
+                <canvas id="bundleCanvas" role="img" aria-label="Vista da seção transversal do feixe de dutos"></canvas>
+              </div>
+              <p class="geometry-warning" id="bundleWarning" hidden></p>
+              <p class="bundle-readout" id="bundlePreviewReadout"></p>
+            </article>
+          </div>
+
+          <div class="bottom-grid">
+            <article class="card diagnostics-card">
+              <div class="card-header"><div><span class="card-kicker">Diagnóstico</span><h3>Regime por duto</h3></div></div>
+              <div class="diagnostic-list">
+                <div><span>Tensão na parede <span class="math">τ<sub>w</sub></span></span><strong id="bundleWallStress">—</strong></div>
+                <div><span>Índice de plasticidade <span class="math">Pl</span></span><strong id="bundlePlasticityIndex">—</strong></div>
+                <div><span>Reynolds HBE generalizado <span class="math">Re<sub>HBE</sub></span></span><strong id="bundleReynoldsHbe">—</strong></div>
+                <div><span>Número de Mach <span class="math">Ma</span></span><strong id="bundleMach">—</strong></div>
+              </div>
+            </article>
+          </div>
+          <p class="assumption-note">Os dutos são idênticos, paralelos e compartilham o mesmo Δp ao longo de L; apenas a área intra-duto conduz o escoamento. O empacotamento é apenas visual — a vazão real depende de N e do raio r.</p>
         </div>
       </section>
     </main>

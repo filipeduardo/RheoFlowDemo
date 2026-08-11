@@ -52,11 +52,12 @@ const units = {
   length: 'm',
   velocity: 'm/s',
   flowRate: 'm3/d',
-  density: 'kg/m3'
+  density: 'kg/m3',
+  area: 'm2'
 };
 ```
 
-Essas quatro dimensões-base impulsionam toda a conversão. `pressureGradient` e `velocity` são dimensões **derivadas**:
+Essas cinco dimensões-base impulsionam toda a conversão. `pressureGradient` e `velocity` são dimensões **derivadas**:
 
 - Unidade de `pressureGradient` = `<unidade de pressão>/<unidade de comprimento>`
 - Unidade de `velocity` = `<unidade de comprimento>/s`
@@ -69,6 +70,7 @@ Essas quatro dimensões-base impulsionam toda a conversão. `pressureGradient` e
 | `length` | m, ft, in | `1`, `0,3048`, `0,0254` | — |
 | `velocity` | m/s, ft/s, in/s | `1`, `0,3048`, `0,0254` | Independent of `length`; used for velocity labels. |
 | `flowRate` | m³/d, bbl/d, MMSCFD, GPM | `1/86400`, `0,158987294928/86400`, `1e6*0,028316846592/86400`, `0,003785411784/60` | Converte vazão volumétrica para m³/s. |
+| `area` | m², ft², in² | `1`, `0,09290304`, `0,00064516` | Área total do envelope no modo feixe de dutos. |
 | `density` | kg/m³, ppg, °API | `1`, `119,826427`, `141,5/(API+131,5)*1000` | °API é uma conversão não linear; a inversa usa `141,5/(ρ/1000) - 131,5`. |
 
 ### 2.4 Funções de conversão
@@ -427,25 +429,57 @@ A tabela de seções individuais (`Seções individuais`) lista cada trecho orig
 
 ---
 
-## 8. Visualização
+## 8. Feixe de Dutos
 
-### 8.1 Modo homogêneo
+O modo **Feixe de dutos** trata `N` dutos circulares idênticos dispostos em paralelo, cada um com o mesmo raio `r` e sujeito ao mesmo Δp ao longo do comprimento `L`.
+
+### 8.1 Entradas
+
+- **Número de dutos**: `N` (inteiro, 1–100 000). O envelope é o menor círculo que contém os centros mais o raio do duto.
+- **Porosidade**: `φ` e área total do envelope `A_total`. O simulador calcula `N = round(φ A_total / (π r²))` e exibe a porosidade efetiva `φ_eff = N π r² / A_total`.
+- Raio do duto `r` e comprimento `L` são os mesmos controles do modo homogêneo.
+
+### 8.2 Empacotamento
+
+- Modo **contagem**: empacotamento hexagonal (triangular) com espaçamento `2r`, centrado na origem; `R_env = r + d_max`.
+- Modo **porosidade**: grade hexagonal com espaçamento `s = sqrt(2 A_total / (N √3))`. Se `s < 2r`, o espaçamento é limitado a `2r` e um aviso indica que `φ` supera o limite de empacotamento (`π / (2√3) ≈ 0,907`). O empacotamento é apenas visual; a vazão depende apenas de `N` e `r`.
+
+### 8.3 Cálculo
+
+- Por duto: resolve `G` a partir de `Q_total / N` (modo vazão fixa) ou usa `G` dado (modo gradiente de pressão).
+- `Q_total = N Q_duto`.
+- `Δp` é o mesmo para todos os dutos e usa `dpEffective` (laminar exato ou Dodge–Metzner suavizado).
+- Cada duto usa os mesmos perfis, tensões e Reynolds do modo homogêneo.
+
+### 8.4 Painel de resultados
+
+- `Q_total`, `Δp`, `N`, `φ_eff`, `R_env`, `U_duto`.
+- Diagnósticos por duto: `τ_w`, `Pl`, `Re_HBE`, `Ma`.
+- Visualização da seção transversal com o envelope e os dutos.
+
+### 8.5 Exportação CSV
+
+O CSV do feixe (`rheoflow-bundle-<N>.csv`) contém uma linha de comentário com `N`, `φ_eff`, `A_total` e `Q_total`, seguida do perfil radial por duto: `r_m, r_over_R, velocity_m_per_s, shear_stress_Pa, shear_rate_per_s`.
+
+## 9. Visualização
+
+### 9.1 Modo homogêneo
 
 - **Gráfico de perfil radial (`#profileCanvas`)**: desenha `U(r/R)` (ciano) e `τ(r/R)` (âmbar tracejado). A região de plugue é destacada em violeta quando `τ₀ > 0`. Passar o cursor mostra `r/R`, `U`, `τ` e `γ̇` naquele ponto.
 - **Canvas de escoamento longitudinal (`#flowCanvas`)**: visão pseudo-3D do duto com codificação de cores por velocidade. A velocidade das partículas depende da razão local `U(y/R) / U_max`.
 
-### 8.2 Modo não homogêneo
+### 9.2 Modo não homogêneo
 
 - **Perfil do duto (`#ductProfileCanvas`)**: plota `r` vs `x`, os pontos originais e as divisões verticais das subseções.
 - **Escoamento no duto (`#ductFlowCanvas`)**: desenha o duto cônico e anima partículas. A velocidade horizontal de cada partícula é proporcional à velocidade média local da subseção em que ela se encontra, de modo que trechos mais estreitos (mais rápidos) aceleram as partículas visualmente.
 
-### 8.3 Animação
+### 9.3 Animação
 
 `requestAnimationFrame` aciona `animate(timestamp)`. `delta` é o tempo de quadro em milissegundos. Os canvas de escoamento recalculam as posições das partículas a cada quadro; o gráfico de perfil é redesenhado apenas em hover ou redimensionamento.
 
 ---
 
-## 9. Acessibilidade e Controles da UI
+## 10. Acessibilidade e Controles da UI
 
 - **Popover de acessibilidade** (`#accessibilityButton`):
   - Alternar visibilidade do painel de configuração / painel de resultados.
@@ -458,14 +492,14 @@ A tabela de seções individuais (`Seções individuais`) lista cada trecho orig
 
 ---
 
-## 10. Comportamento em Cenários
+## 11. Comportamento em Cenários
 
-### 10.1 Casos sem escoamento
+### 11.1 Casos sem escoamento
 
 - **Fluido com tensão limite, duto homogêneo**: se `τ_w ≤ τ₀`, `flowing` é falso. O perfil de velocidade é zero em toda parte, `Pl = 1` e o distintivo mostra `Sem escoamento`.
 - **Duto não homogêneo, modo de gradiente de pressão**: se `targetP ≤ thresholdPressure`, `solveGlobalQ` retorna `0`. Todas as métricas NH ficam zero e o distintivo mostra `Sem escoamento`.
 
-### 10.2 Mudanças de unidade
+### 11.2 Mudanças de unidade
 
 Alterar uma unidade preserva o estado físico:
 
@@ -474,7 +508,7 @@ Alterar uma unidade preserva o estado físico:
 - As equações permanecem em SI (uma nota na UI informa isso).
 - A geometria NH é regenerada na nova unidade de comprimento.
 
-### 10.3 Mudanças de modelo
+### 11.3 Mudanças de modelo
 
 Trocar de modelo reológico:
 
@@ -483,13 +517,13 @@ Trocar de modelo reológico:
 - Recalcula `G`/`Q` e todos os diagnósticos.
 - Marca os resultados NH como sujos (requer recálculo).
 
-### 10.4 Modos de gradiente de pressão vs vazão fixa
+### 11.4 Modos de gradiente de pressão vs vazão fixa
 
 - **Gradiente de pressão (direto)**: `G` é fixo; `Q`, `U`, `Re`, `Ma` respondem a mudanças de reologia/geometria.
 - **Gradiente de pressão (diferencial)**: `Δp` é fixo; `G` é derivado como `Δp/L`; comporta-se como gradiente direto para os cálculos subsequentes.
 - **Vazão fixa**: `Q` é fixo; `G` é resolvido iterativamente; aumentar a viscosidade/tensão limite aumenta `G` e `Δp`.
 
-### 10.5 Convergência não homogênea
+### 11.5 Convergência não homogênea
 
 Aumentar `Subdivisões por trecho` refina a integração:
 
@@ -498,7 +532,7 @@ Aumentar `Subdivisões por trecho` refina a integração:
 - `avgVelocity` depende de `targetQ` e `avgRadius`; para `Q` fixo, é fisicamente consistente.
 - `Re` por subseção depende do raio local e do `Q` comum.
 
-### 10.6 Entradas extremas
+### 11.6 Entradas extremas
 
 - Raio muito pequeno: `radiusAt` limita a `1e-6` m, evitando `Infinity`/`NaN`.
 - `G` ou `Q` muito altos: `solveForG` e `solveGlobalQ` limitam as iterações e delimitam até `1e12` para evitar loops descontrolados.
@@ -506,7 +540,7 @@ Aumentar `Subdivisões por trecho` refina a integração:
 
 ---
 
-## 11. Referência Rápida de Variáveis/Fórmulas
+## 12. Referência Rápida de Variáveis/Fórmulas
 
 | Símbolo | Nome interno | Unidade SI | Rótulo exibido | Como é calculado |
 |---------|--------------|------------|----------------|------------------|
@@ -534,7 +568,7 @@ Aumentar `Subdivisões por trecho` refina a integração:
 
 ---
 
-## 12. Notas para Desenvolvedores
+## 13. Notas para Desenvolvedores
 
 - Todos os números exibidos usam o auxiliar `formatValue`, que respeita `displaySciDigits` (2 ou 6).
 - A renderização das equações é assíncrona por meio de `MathJax.typesetPromise`.

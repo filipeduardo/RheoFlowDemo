@@ -52,11 +52,12 @@ const units = {
   length: 'm',
   velocity: 'm/s',
   flowRate: 'm3/d',
-  density: 'kg/m3'
+  density: 'kg/m3',
+  area: 'm2'
 };
 ```
 
-These four base dimensions drive every conversion. `pressureGradient` and `velocity` are **derived** dimensions:
+These five base dimensions drive every conversion. `pressureGradient` and `velocity` are **derived** dimensions:
 
 - `pressureGradient` unit = `<pressure unit>/<length unit>`
 - `velocity` unit = `<length unit>/s`
@@ -69,6 +70,7 @@ These four base dimensions drive every conversion. `pressureGradient` and `veloc
 | `length` | m, ft, in | `1`, `0.3048`, `0.0254` | — |
 | `velocity` | m/s, ft/s, in/s | `1`, `0.3048`, `0.0254` | Independent of `length`; used for velocity labels. |
 | `flowRate` | m³/d, bbl/d, MMSCFD, GPM | `1/86400`, `0.158987294928/86400`, `1e6*0.028316846592/86400`, `0.003785411784/60` | Converts volumetric rate to m³/s. |
+| `area` | m², ft², in² | `1`, `0.09290304`, `0.00064516` | Total envelope area in bundle-of-ducts mode. |
 | `density` | kg/m³, ppg, °API | `1`, `119.826427`, `141.5/(API+131.5)*1000` | °API is a non-linear conversion; reverse uses `141.5/(ρ/1000) - 131.5`. |
 
 ### 2.4 Conversion functions
@@ -428,25 +430,57 @@ The per-section table (`Seções individuais`) lists each original segment with 
 
 ---
 
-## 8. Visualization
+## 8. Bundle of Ducts
 
-### 8.1 Homogeneous mode
+The **Bundle of ducts** mode models `N` identical circular ducts arranged in parallel, each with the same radius `r` and subjected to the same Δp over the length `L`.
+
+### 8.1 Inputs
+
+- **Duct count**: `N` (integer, 1–100,000). The envelope is the smallest circle containing the centers plus the duct radius.
+- **Porosity**: `φ` and total envelope area `A_total`. The simulator computes `N = round(φ A_total / (π r²))` and displays the effective porosity `φ_eff = N π r² / A_total`.
+- Duct radius `r` and length `L` use the same controls as the homogeneous mode.
+
+### 8.2 Packing
+
+- **Count mode**: hexagonal (triangular) packing with spacing `2r`, centered at the origin; `R_env = r + d_max`.
+- **Porosity mode**: hexagonal grid with spacing `s = sqrt(2 A_total / (N √3))`. If `s < 2r`, the spacing is clamped to `2r` and a warning indicates that `φ` exceeds the hexagonal packing limit (`π/(2√3) ≈ 0.907`). Packing is display-only; the actual flow depends only on `N` and `r`.
+
+### 8.3 Calculation
+
+- Per duct: solve `G` from `Q_total / N` (fixed-flow mode) or use the given `G` (pressure-gradient mode).
+- `Q_total = N Q_duct`.
+- `Δp` is the same for all ducts and uses `dpEffective` (exact laminar or smoothed Dodge–Metzner).
+- Each duct uses the same profiles, stresses, and Reynolds numbers as the homogeneous mode.
+
+### 8.4 Results Panel
+
+- `Q_total`, `Δp`, `N`, `φ_eff`, `R_env`, `U_duct`.
+- Per-duct diagnostics: `τ_w`, `Pl`, `Re_HBE`, `Ma`.
+- Cross-section preview with the envelope and ducts.
+
+### 8.5 CSV Export
+
+The bundle CSV (`rheoflow-bundle-<N>.csv`) contains a comment line with `N`, `φ_eff`, `A_total`, and `Q_total`, followed by the per-duct radial profile: `r_m, r_over_R, velocity_m_per_s, shear_stress_Pa, shear_rate_per_s`.
+
+## 9. Visualization
+
+### 9.1 Homogeneous mode
 
 - **Radial profile chart (`#profileCanvas`)**: draws `U(r/R)` (cyan) and `τ(r/R)` (amber dashed). The plug region is highlighted in violet when `τ₀ > 0`. Hovering shows `r/R`, `U`, `τ`, and `γ̇` at that point.
 - **Longitudinal flow canvas (`#flowCanvas`)**: a color-coded pseudo-3D duct view. Particle speed depends on the local velocity ratio `U(y/R) / U_max`.
 
-### 8.2 Non-homogeneous mode
+### 9.2 Non-homogeneous mode
 
 - **Duct profile (`#ductProfileCanvas`)**: plots `r` vs `x`, the original data points, and vertical subdivision boundaries.
 - **Duct flow (`#ductFlowCanvas`)**: draws the tapered duct and animates particles. Each particle's horizontal speed is proportional to the local mean velocity of the subsection it currently occupies, so narrower (faster) sections accelerate particles visibly.
 
-### 8.3 Animation
+### 9.3 Animation
 
 `requestAnimationFrame` drives `animate(timestamp)`. `delta` is the frame time in milliseconds. The flow canvases recompute particle positions each frame; the profile chart is redrawn only on hover or resize.
 
 ---
 
-## 9. Accessibility and UI Controls
+## 10. Accessibility and UI Controls
 
 - **Accessibility popover** (`#accessibilityButton`):
   - Toggle control panel / results panel visibility.
@@ -459,14 +493,14 @@ The per-section table (`Seções individuais`) lists each original segment with 
 
 ---
 
-## 10. Scenario Behavior
+## 11. Scenario Behavior
 
-### 10.1 No-flow cases
+### 11.1 No-flow cases
 
 - **Homogeneous yield-stress fluid**: if `τ_w ≤ τ₀`, `flowing` is false. Velocity profile is zero everywhere, `Pl = 1`, badge shows `Sem escoamento`.
 - **Non-homogeneous pressure-gradient mode**: if `targetP ≤ thresholdPressure`, `solveGlobalQ` returns `0`. All NH metrics become zero and the badge shows `Sem escoamento`.
 
-### 10.2 Unit changes
+### 11.2 Unit changes
 
 Changing a unit preserves the physical state:
 
@@ -475,7 +509,7 @@ Changing a unit preserves the physical state:
 - Equations stay in SI (a note in the UI informs the user of this).
 - NH geometry is regenerated in the new length unit.
 
-### 10.3 Model changes
+### 11.3 Model changes
 
 Switching rheological models:
 
@@ -484,13 +518,13 @@ Switching rheological models:
 - Recomputes `G`/`Q` and all diagnostics.
 - Marks NH results as dirty (requires recalculation).
 
-### 10.4 Pressure-gradient vs flow-rate modes
+### 11.4 Pressure-gradient vs flow-rate modes
 
 - **Pressure-gradient (direct)**: `G` is fixed; `Q`, `U`, `Re`, `Ma` respond to rheology/geometry changes.
 - **Pressure-gradient (differential)**: `Δp` is fixed; `G` is derived as `Δp/L`; behaves like direct gradient for downstream calculations.
 - **Flow-rate**: `Q` is fixed; `G` is solved iteratively; increasing viscosity/yield stress increases `G` and `Δp`.
 
-### 10.5 Non-homogeneous convergence
+### 11.5 Non-homogeneous convergence
 
 Increasing `Subdivisões por trecho` refines the integration:
 
@@ -499,7 +533,7 @@ Increasing `Subdivisões por trecho` refines the integration:
 - `avgVelocity` depends on `targetQ` and `avgRadius`; for a fixed `Q`, it is physically consistent.
 - `Re` per subsection depends on the local radius and the common `Q`.
 
-### 10.6 Extreme inputs
+### 11.6 Extreme inputs
 
 - Very small radius: `radiusAt` clamps to `1e-6` m, preventing `Infinity`/`NaN`.
 - Very high `G` or `Q`: `solveForG` and `solveGlobalQ` cap iterations and bracket up to `1e12` to avoid runaway loops.
@@ -507,7 +541,7 @@ Increasing `Subdivisões por trecho` refines the integration:
 
 ---
 
-## 11. Variable/Formula Quick Reference
+## 12. Variable/Formula Quick Reference
 
 | Symbol | Internal name | SI unit | Display label | How it is computed |
 |--------|--------------|---------|---------------|--------------------|
@@ -535,7 +569,7 @@ Increasing `Subdivisões por trecho` refines the integration:
 
 ---
 
-## 12. Notes for Developers
+## 13. Notes for Developers
 
 - All displayed numbers use the `formatValue` helper, which respects `displaySciDigits` (2 or 6).
 - Equation rendering is asynchronous through MathJax `typesetPromise`.
